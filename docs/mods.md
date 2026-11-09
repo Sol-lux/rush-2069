@@ -12,6 +12,12 @@ it shipped.
 | Machine gun spin-up | Done, played | A chain gun wind-up: 5 rounds a second from rest, up to 30 over 1.5 s of fire held, full speed kept for 20 frames after you let go, then back down to 5 over 1.5 s. As shipped it fires a steady 15. |
 | Weapon damage tweaks | Planned | Per-weapon damage. All damage goes through one routine (below), so this goes beside double health. Which weapon is which type is still to be matched. |
 | Speed on weapon pickup | Planned, harder | A speed change when a weapon is picked up. The pickup routine is known; the car's velocity isn't yet (a short recording driving straight, boosting and braking finds it). |
+| Rammer cooldown, damage and push | Done, played; push still to tune | A 1 s refire rather than 0.333 s, so one long shove costs one ammo; damage 200 + 5 x speed rather than 160 + 7 x speed, then halved by double health like every hit; and a push of the target away from the rammer, flat along the ground: a force of 800000 (an impact's is 330000 plus 66000 up, with spin, which is what flips cars) times the rammer's speed over 80, from 0.25 to 1.25 times. |
+| Rammer handling and reach | Planned | +5% speed and -5% steering while held, and a longer reach (the distance the target must be ahead to count) or a 25% stronger front block. |
+| Sonic Boom | Planned | A slower fire rate, and 15% less top speed while held. Its effect needs a graphical fix. |
+| Pea shooter | Planned | The weapon you have with no pickup: 33% more damage and auto fire. |
+| Bounce balls | Planned, to look at | Whether the bounce trajectory can be changed. |
+| Upside-down self-destruct | Planned | A short countdown that destroys a car left upside down, perhaps with a vignette as control is lost and a 1-1.5 s window where it is vulnerable. |
 
 ## Other ideas
 
@@ -22,6 +28,13 @@ The owner's:
 - Track editor. A big project: the track format (geometry, collision, AI paths, checkpoints, spawn points, arena
   weapon spawns) isn't worked out. Moving weapon pickups and spawn points in the Battle arenas is the realistic
   first step.
+
+- An AI player: a small network trained by reinforcement learning to play Battle, with the game's memory as what it
+  sees, damage dealt and taken as its reward, and controller input as what it does. The pieces that exist are input
+  injection (`--input`, `--record`) and the memory map below. Missing: a fast bridge between the game and the
+  trainer, running the game faster than real time without drawing (the `headless/` build may be the start), and a
+  quick reset to the start of a round. First step: measure how fast the game can run, then train one to ram a parked
+  car.
 
 Suggested along the way, not yet asked for: handling and physics tweaks, Battle rules (score limits, timers,
 respawn), practice HUDs (speedometer, splits), music control, randomizers.
@@ -34,17 +47,20 @@ Found by recording hand-played Battle sessions (`--record`, `--dump-ram`, `--par
 |---|---|
 | Player record | `0x80152818` + player × `0x3B8` (player 0 is player 1) |
 | Car index / car | record +`0x35B`; the car is `0x8014A250` + index × `0x808` |
-| Weapon | record +`0x384`, s8: 8 none, 1 machine gun |
+| Weapon | record +`0x384`, s8: 8 none, 1 machine gun, 4 missile launcher (3 ammo), 5 Rammer (5), 6 small missile launcher (20, one shot a press), 7 Sonic Boom (5). Invisibility is held elsewhere. |
 | Ammo | record +`0x385`, s8: -1 none; the machine gun comes with 100 |
 | Health | record +`0x386`, s16: 800 full |
 | Last damage taken | record +`0x388`, s16 |
+| Flags | record +`0x38C`; bit 4 is the shield, which cuts a hit to 0.2 of its damage (`0x80394DC4`) |
+| Speed | car +`0x3F0`, float |
 | Refire timer | record +`0x3AC`, float seconds, counted down by the frame's time (`0x8002EB94`) |
 
 | Code | Where |
 |---|---|
 | Spawn health (800) | `func_800D1004`, `0x800D1114` |
 | Pickup (weapon, ammo; a health pickup sets 800) | `func_8010D3C0`, called from `func_800BEAA0`; weapon and ammo stored at `0x8010D5C4` |
-| Damage (all hits) | `ovl2_func_8038D3A4`; the damage in a2 comes off the health at `0x8038D438` |
+| Damage (all hits) | `ovl2_func_8038D3A4` (attacker, victim, damage); nothing between team mates, the shield's 0.2, the damage kept at +`0x388`, then off the health at `0x8038D438` |
+| Rammer | `func_800CE358` from `0x800CE544`, Battle only: on contact, holding type 5 with the refire timer run out, and the target ahead by more than 2.25, it spends one ammo, sets the timer to 0.333 s (`0x80124108`, `0x8012410C` for the other car's side) and does 160 + 7 × the rammer's speed (car +`0x3F0`) |
 | Firing | `ovl2_func_8038FCE0`; the reload by weapon is a jump table at `0x80394EBC` |
 
 Reload by weapon type, from that table:

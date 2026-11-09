@@ -69,6 +69,9 @@ void rush2049_ghost_arrows_draw(uint8_t* rdram, recomp_context* ctx);
    gun's reload is stored (s7 the player's record). */
 void rush2049_battle_damage(recomp_context* ctx);
 void rush2049_machine_gun_reload(uint8_t* rdram, recomp_context* ctx);
+/* In func_800CE358, as a ram's damage is about to be dealt: the rammer's record, its target's, the rammer's car and the
+   damage, a float about to be truncated into a2. */
+void rush2049_rammer_hit(uint8_t* rdram, uint32_t hitter, uint32_t target, uint32_t hitter_car, float* damage);
 
 /* Scenery Culling (src/draw_distance.cpp, us.toml): func_8009EBC0 is given the camera's position, has picked the
    stretch's record, and then tests a word of the scenery visibility mask, the word's byte offset in the record beside

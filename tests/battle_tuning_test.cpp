@@ -1,5 +1,5 @@
 // Battle Mode Alt (src/battle_tuning.cpp) checks, run by CI: at Original the damage and the machine gun's reload are
-// left alone; Alt halves damage, rounding up, and the machine gun fires 5 rounds a second from rest,
+// left alone; Alt halves damage, rounding up, pushes a rammed car flat away from the rammer, and the machine gun fires 5 rounds a second from rest,
 // reaches 30 after 1.5 s of fire held, keeps its spin through a let-go of up to 20 frames and loses it over 1.5 s after.
 
 #include <cmath>
@@ -86,6 +86,27 @@ int main() {
     rush2049::set_battle_mode_alt(true);
     rush2049_machine_gun_reload(rdram, &ctx);
     check(near(reload(rdram), 0.2f), "Alt's first shot reloads 0.2 s");
+
+    // The Rammer's push: flat, away from the rammer, scaled by its speed and clamped, then into the target's frame.
+    {
+        const float identity[9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+        const float hitter[3] = { 0, 0, 0 };
+        const float ahead_up[3] = { 10, 50, 0 };
+        float out[3];
+        rush2049::rammer_push(ahead_up, hitter, identity, rush2049::rammer_push_reference_speed, out);
+        check(near(out[0], rush2049::rammer_push_force) && out[1] == 0.0f && out[2] == 0.0f, "ram push is flat, full at the reference speed");
+        rush2049::rammer_push(ahead_up, hitter, identity, 0.0f, out);
+        check(near(out[0], rush2049::rammer_push_force * rush2049::rammer_push_min_scale), "ram push at rest is the minimum");
+        rush2049::rammer_push(ahead_up, hitter, identity, 1000.0f, out);
+        check(near(out[0], rush2049::rammer_push_force * rush2049::rammer_push_max_scale), "ram push is capped");
+        const float turn[9] = { 0, 0, 1, 0, 1, 0, -1, 0, 0 };  // out_i = row_i . v
+        rush2049::rammer_push(ahead_up, hitter, turn, rush2049::rammer_push_reference_speed, out);
+        check(near(out[0], 0.0f) && near(out[2], -rush2049::rammer_push_force), "ram push is rotated into the target's frame");
+        check(near(rush2049::rammer_damage(80.0f), 600.0f), "ram damage 200 + 5 x speed");
+        const float same[3] = { 0, 5, 0 };
+        rush2049::rammer_push(same, hitter, identity, 80.0f, out);
+        check(out[0] == 0.0f && out[1] == 0.0f && out[2] == 0.0f, "no push with no ground distance");
+    }
 
     std::printf(failures == 0 ? "battle tuning: all passed\n" : "battle tuning: %d failed\n", failures);
     return failures == 0 ? 0 : 1;

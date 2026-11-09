@@ -437,6 +437,19 @@ func = "ovl2_func_8038FCE0"
 before_vram = 0x80390318
 text = "    rush2049_machine_gun_reload(rdram, ctx);"
 
+# Battle Mode Alt, Rammer cooldown and push (src/battle_tuning.cpp): in the Battle car-contact check, after a ram has
+# spent its ammo and set its refire timer, as its damage is passed to the damage routine. The pair is checked both
+# ways round: first t4 rams t5 (t1 t4's car, f16 the damage), then t5 rams t4 (t0 t5's car, f8 the damage).
+[[patches.hook]]
+func = "func_800CE358"
+before_vram = 0x800CE68C
+text = "    rush2049_rammer_hit(rdram, (uint32_t)ctx->r12, (uint32_t)ctx->r13, (uint32_t)ctx->r9, &ctx->f16.fl);"
+
+[[patches.hook]]
+func = "func_800CE358"
+before_vram = 0x800CE768
+text = "    rush2049_rammer_hit(rdram, (uint32_t)ctx->r13, (uint32_t)ctx->r12, (uint32_t)ctx->r8, &ctx->f8.fl);"
+
 # Ghost Arrows (src/ghost_arrows.cpp): in the scene draw's poly loop, at the start of a poly's turn (s6 the poly, s7
 # the display list pointer's address, sp+0x16C its index) and at the end, where every path through it meets; and
 # after the camera's last model tree, or where it would be.

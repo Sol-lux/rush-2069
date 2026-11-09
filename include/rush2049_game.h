@@ -76,6 +76,20 @@ namespace rush2049 {
     // reload given then; and the reload for a level.
     float spin_after_shot(float level, float gap, float last_interval);
     float spin_interval(float level);
+    // Battle Mode Alt's Rammer: its refire, and the push a ram gives: rammer_push_force (the force an impact gives is
+    // 330000) times the rammer's speed over the reference, clamped, flat along the ground away from the rammer.
+    constexpr float rammer_refire_seconds = 1.0f;
+    constexpr float rammer_push_force = 800000.0f;
+    constexpr float rammer_push_reference_speed = 80.0f;
+    constexpr float rammer_push_min_scale = 0.25f;
+    constexpr float rammer_push_max_scale = 1.25f;
+    // A ram's damage, before double health halves it: 200 + 5 x speed (as shipped 160 + 7 x speed).
+    constexpr float rammer_damage_base = 200.0f;
+    constexpr float rammer_damage_per_speed = 5.0f;
+    float rammer_damage(float speed);
+    // The push on the target's car, in its frame: target and hitter are record positions (+0x8), matrix the target
+    // record's (+0x2C), speed the rammer car's (+0x3F0).
+    void rammer_push(const float target[3], const float hitter[3], const float matrix[9], float speed, float out[3]);
 }
 
 #endif

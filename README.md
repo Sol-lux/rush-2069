@@ -81,7 +81,9 @@ option has an Original value that runs the game as it shipped.
 - **Battle Mode Alt**: gameplay changes to Battle, on or off together (Original is Battle as it shipped). Cars take
   half damage, so they last twice as long, and the machine gun winds up like a chain gun while you hold fire, from 5
   rounds a second to 30 over a second and a half, keeps its speed for a moment after you let go, then winds down over
-  a second and a half (as shipped it fires a steady 15 a second).
+  a second and a half (as shipped it fires a steady 15 a second). The Rammer fires at most once a second, so a long shove
+  no longer spends two charges; its damage rises less with speed, so a fast ram no longer nearly kills on its own; and
+  a ram pushes the other car away along the ground, harder the faster you hit.
 - **Large Controller Paks**: about 1.9 MB of save space per pak instead of 32 KiB, so ghosts and profiles don't
   run out of room.
 - **Rumble and saves together**: every controller has both a Controller Pak and a Rumble Pak in, so races rumble and

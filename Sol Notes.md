@@ -1,0 +1,1 @@
+- Sonic Boom: slower fire rate; lets index all weapon stats.

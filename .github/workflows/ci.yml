@@ -79,6 +79,10 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Iinclude -Ilib/N64ModernRuntime/N64Recomp/include tests/draw_distance_test.cpp \
             src/draw_distance.cpp -o draw_distance_test
           ./draw_distance_test
+      - name: Battle tuning tests
+        run: |
+          g++ -std=c++20 -O2 -Wall -Iinclude -Ilib/N64ModernRuntime/N64Recomp/include tests/battle_tuning_test.cpp             src/battle_tuning.cpp -o battle_tuning_test
+          ./battle_tuning_test
       - name: Memory search tests
         run: |
           g++ -std=c++20 -O2 -Wall -Iinclude tests/mem_search_test.cpp src/mem_search.cpp -o mem_search_test

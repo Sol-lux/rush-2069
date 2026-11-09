@@ -78,6 +78,10 @@ option has an Original value that runs the game as it shipped.
   It shows the ghost each pak already holds for that track and asks before replacing it.
   As shipped, the game kept a ghost only until you quit (as GHOST 1) and showed the prompt only for a developer's
   profile name. Saving needs a player profile on the pak: Just Play has none, so it keeps the ghost for the session.
+- **Battle Mode Alt**: gameplay changes to Battle, on or off together (Original is Battle as it shipped). Cars take
+  half damage, so they last twice as long, and the machine gun winds up like a chain gun while you hold fire, from 5
+  rounds a second to 30 over a second and a half, keeps its speed for a moment after you let go, then winds down over
+  a second and a half (as shipped it fires a steady 15 a second).
 - **Large Controller Paks**: about 1.9 MB of save space per pak instead of 32 KiB, so ghosts and profiles don't
   run out of room.
 - **Rumble and saves together**: every controller has both a Controller Pak and a Rumble Pak in, so races rumble and
@@ -124,6 +128,7 @@ shipped, set every Original value:
 | Large Controller Paks | Controller Pak Size | `general.json` `pak_size` | `"Large"` (62 banks, about 1.9 MB) | `"Original"` (32 KiB) |
 | Rewind | Rewind | `general.json` `rewind` | `"On"` | `"Off"` |
 | Save Ghosts | Save Ghosts | `general.json` `save_ghosts` | `"On"` | `"Original"` (no SAVE GHOST prompt) |
+| Battle Mode Alt | Battle Mode Alt | `general.json` `battle_mode` | `"Alt"` | `"Original"` (Battle as it shipped) |
 | Mouse cursor on screen | Mouse Cursor | `general.json` `mouse_cursor` | `"Original"` (`"Shown"` keeps it on screen while a controller or the keyboard is used; `"Moving"` shows it while the mouse moves and hides it after two seconds still) | `"Original"` (hidden once a controller or a key is pressed, until the mouse moves) |
 
 Not options, because they don't change the game: the keyboard and gamepad layouts, playback at half the game's

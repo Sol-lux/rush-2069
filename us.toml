@@ -423,6 +423,20 @@ func = "func_8009C8F0"
 before_vram = 0x8009CBCC
 text = "    ctx->f10.fl = rush2049_draw_distance_level(ctx->f10.fl);"
 
+# Battle Mode Alt, health (src/battle_tuning.cpp): in the damage routine, where both paths (with and without the victim's
+# armour scaling) meet, a2 the damage that the next instructions store at +0x388 and take off the health.
+[[patches.hook]]
+func = "ovl2_func_8038D3A4"
+before_vram = 0x8038D434
+text = "    rush2049_battle_damage(ctx);"
+
+# Battle Mode Alt, machine gun spin-up (src/battle_tuning.cpp): in the fire routine's machine gun case, after its reload (0.0667 s from
+# 0x80394EE4) is stored in the refire timer at s7 + 0x3AC.
+[[patches.hook]]
+func = "ovl2_func_8038FCE0"
+before_vram = 0x80390318
+text = "    rush2049_machine_gun_reload(rdram, ctx);"
+
 # Ghost Arrows (src/ghost_arrows.cpp): in the scene draw's poly loop, at the start of a poly's turn (s6 the poly, s7
 # the display list pointer's address, sp+0x16C its index) and at the end, where every path through it meets; and
 # after the camera's last model tree, or where it would be.

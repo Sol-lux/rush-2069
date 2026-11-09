@@ -1,5 +1,5 @@
-// Config tabs: the stock tabs, plus the controller accessory, Controller Pak size, rewind and mouse cursor options on
-// the General tab, the game frame rate, hi-res font, split-screen aspect ratio and copying frames to RAM on the Graphics
+// Config tabs: the stock tabs, plus the controller accessory, Controller Pak size, rewind, mouse cursor and Battle Mode
+// Alt options on the General tab, the game frame rate, hi-res font, split-screen aspect ratio and copying frames to RAM on the Graphics
 // tab, and MusyX mixing on the Sound tab.
 
 #include <algorithm>
@@ -197,6 +197,18 @@ namespace {
         {SeeThroughOrder::Sorted, "Sorted", "Sorted"},
     };
     const std::string see_through_order_option = "see_through_order";
+
+    // src/battle_tuning.cpp.
+    enum class BattleMode {
+        Original,
+        Alt,
+        OptionCount
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> battle_mode_options = {
+        {BattleMode::Original, "Original", "Original"},
+        {BattleMode::Alt, "Alt", "Alt"},
+    };
+    const std::string battle_mode_option = "battle_mode";
 
     // src/ghost_arrows.cpp.
     enum class GhostArrows {
@@ -449,6 +461,18 @@ void rush2049::init_config() {
         mouse_cursor_options,
         MouseCursor::Original
     );
+    general.add_enum_option(
+        battle_mode_option,
+        "Battle Mode Alt",
+        "Gameplay changes to Battle, all together."
+        "<br/>"
+        "<b>Original:</b> Battle as the game shipped. "
+        "<b>Alt:</b> cars take half damage, so they last twice as long, and the machine gun winds up like a chain "
+        "gun: 5 rounds a second from rest, up to 30 over a second and a half of firing, holding its speed for a "
+        "moment after you let go, then winding down over a second and a half.",
+        battle_mode_options,
+        BattleMode::Alt
+    );
     // Called on load too.
     general.add_option_change_callback(controllers_option,
         [](recomp::config::ConfigValueVariant cur_value, recomp::config::ConfigValueVariant, recomp::config::OptionChangeContext) {
@@ -458,6 +482,10 @@ void rush2049::init_config() {
     general.add_option_change_callback(rewind_option,
         [](recomp::config::ConfigValueVariant cur_value, recomp::config::ConfigValueVariant, recomp::config::OptionChangeContext) {
             rush2049::set_rewind(static_cast<Rewind>(std::get<uint32_t>(cur_value)) == Rewind::On);
+        });
+    general.add_option_change_callback(battle_mode_option,
+        [](recomp::config::ConfigValueVariant cur_value, recomp::config::ConfigValueVariant, recomp::config::OptionChangeContext) {
+            rush2049::set_battle_mode_alt(static_cast<BattleMode>(std::get<uint32_t>(cur_value)) == BattleMode::Alt);
         });
     // RecompFrontend-0007 and -0008.
     general.add_option_change_callback(mouse_cursor_option,

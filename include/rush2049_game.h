@@ -65,6 +65,17 @@ namespace rush2049 {
     // all by whether its tip can be seen (Whole), rather than amid it and covered pixel by pixel (Original).
     void set_ghost_arrows_whole(bool on);
     bool ghost_arrows_whole();
+    // Battle Mode Alt (src/battle_tuning.cpp): every Battle gameplay mod on (Alt) or Battle as it shipped (Original).
+    void set_battle_mode_alt(bool on);
+    constexpr float spin_min_rate = 5.0f;      // rounds a second from rest
+    constexpr float spin_max_rate = 30.0f;     // at full spin
+    constexpr float spin_up_seconds = 1.5f;    // held, from rest to full
+    constexpr float spin_hold_seconds = 20.0f / 60.0f;  // released, before it spins down
+    constexpr float spin_down_seconds = 1.5f;  // from full to rest
+    // The spin level after a shot, from the level at the last one, the seconds since it (negative: the first) and the
+    // reload given then; and the reload for a level.
+    float spin_after_shot(float level, float gap, float last_interval);
+    float spin_interval(float level);
 }
 
 #endif

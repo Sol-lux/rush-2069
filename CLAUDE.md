@@ -4,6 +4,10 @@ A static recompilation of the N64 *San Francisco Rush 2049* (US) with N64Recomp,
 and RT64, plus enhancements. Almost all of it is written by AI agents, so this file is what the next one needs: the
 rules, how work ships, and where everything else is written.
 
+This copy is the owner's fork, for their own gameplay mods on top of the recomp. The game as it shipped stays one
+setting away: every mod is behind an option whose Original value turns it off. The running list of mods, done and
+planned, is `docs/mods.md`.
+
 ## What lives where
 
 This repo is the game: its recompilation, enhancements and settings, the desktop build and its releases, and its own
@@ -33,6 +37,7 @@ points at the other.
   - `docs/web.md`: what of the web target is this game's own, and the `headless/` build.
   - `docs/ruled-out.md`: what has been tried and measured, so don't retry it. Read it before a performance or
     rendering change.
+  - `docs/mods.md`: the gameplay mods, done and planned, and the game memory and code each one uses.
 - **This file**: only what an agent can't get from the others. It changes when a rule changes.
 
 This repo and the web repos are public. Write for a stranger, in the present tense: nothing about a contributor's own
@@ -47,6 +52,9 @@ anyone keeps ROMs.
   `tools/title_patch.py`, never commit the picture.
 - Every enhancement is an option with an Original value that runs the game as it shipped, on the stock tab for its
   topic (General, Graphics, Sound, Controls), with a line in the README's list and a row in its settings table.
+- Battle gameplay mods (health, weapon damage, fire rates, pickups) all sit behind one option, Battle Mode Alt
+  (General tab, `src/battle_tuning.cpp`): Original is Battle as it shipped, Alt turns every one of them on. A new one
+  joins that option rather than adding its own, and gets a line in `docs/mods.md`.
 - Function and variable names in `syms/` are the mod API: add names, never rename or remove one.
 - The game's changes to the submodules go in `runtime-patches/` (applied by `tools/apply_runtime_patches.sh`), never
   committed inside `lib/`. A new change is a new patch file per submodule, numbered after that submodule's highest,
@@ -56,18 +64,14 @@ anyone keeps ROMs.
   BanjoRecomp, Zelda64Recomp or Donkey-Kong-64-Recompiled: their CONTRIBUTING.md asks for no LLM-written code
   (plume's, no AI-made contribution and no AI talking to its maintainers). The web forks stay forks.
 - Code from a repo without a license is never copied: facts learned from one only.
-- Priority is by what it breaks: high for a crash, high or med for a GitHub issue (high when it stops someone
-  playing), low for a small improvement. Work without one gets one from whoever first can tell (often its title
-  says), before anything else they do on it; a priority found wrong is changed at once, in the same work. This recomp
-  is the project's own, so its work comes before N64Recomp-browser's of the same kind.
+- Priority is by what it breaks: high for a crash or anything that stops the game being played, low for a small
+  improvement.
 - CI (`.github/workflows/ci.yml`) has no ROM: it builds everything but the recompiled code and stops short of linking.
   Anything that changes behaviour needs a run of the game before it lands (`docs/building.md`). Pure code (resampler,
   limiters, the MusyX side mix, Draw Distance's matrix scaling) has tests in `tests/` that CI runs; new pure code gets
   one.
-- A merge that changes what the desktop game runs is shipped by the agent whose merge it is, in the same work and
-  without being asked: a desktop release (Windows and Linux), one release carrying every merge since the last, and, if
-  it changes what the page is built from, the page played and republished. `docs/releasing.md` says which files count,
-  how a change's line waits in `releases/next.md` and who cuts the release.
+- Nothing is released, published or pushed unless the owner asks: no desktop release and no page republish follow a
+  merge on their own. When the owner does ask, `docs/releasing.md` says how.
 
 ## How it fits together
 

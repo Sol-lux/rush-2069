@@ -43,13 +43,17 @@ the process you started, from a DPI-aware process (`SetProcessDPIAware()` first,
                              folder, the crash trace with it (Linux: unless started from a terminal)
 --stacks / --probes          every few seconds: every thread's stack and the probes / the probes only
 --players <n>                ports 2..n copy port 1 (and --input), to drive split screen with one pad
---input <file>               scripted port 1 input: "<seconds> <buttons hex> [x y]" lines; 0x10000 is Rewind
+--park                       with --players: the added ports go still once a race runs (targets in Battle)
+--record <file>              port 1's input to a file in --input's format, a line per change
+--input <file>               scripted port 1 input: "<seconds> <buttons hex> [x y]" lines; 0x10000 is Rewind,
+                             0x20000 leaves the --players ports alone
 --window <w>x<h>             window size (default 1600x1200; Auto resolution follows it)
 --musyx hle|native|lle|compare   audio path; native is the HLE without the 44.1 kHz mix
 --dump-audio <wav>           the game's mix before resampling (float); --dump-output <wav>: what the device gets
 --dump-dl <file> <seconds>   one frame's display list as text
 --dump-ram <prefix> <t1,..>  all of RDRAM at those times; diff two to find a setting's byte
 --watch <addr>               stacks on the first 6 changes of one RDRAM byte; --hwwatch <addr>: reads too
+--wwatch <addr>[:w]          the game functions that write those w bytes (default 4), logged every 5 s (Windows)
 --memprobe                   F1 shows a memory probe over the game: F2 starts a search of RDRAM (F7: 1, 2 or 4
                              bytes), F3-F6 keep what changed, stayed, went up, went down; F9 picks one, F10 counts
                              the game functions that write it (Windows). Steps and results go to the log too

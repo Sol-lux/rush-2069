@@ -64,6 +64,12 @@ void rush2049_ghost_poly_begin(uint8_t* rdram, recomp_context* ctx);
 void rush2049_ghost_poly_end(uint8_t* rdram, recomp_context* ctx);
 void rush2049_ghost_arrows_draw(uint8_t* rdram, recomp_context* ctx);
 
+/* Battle Mode Alt (src/battle_tuning.cpp, us.toml): in the damage routine ovl2_func_8038D3A4
+   with a2 the damage about to come off the health, and in the fire routine ovl2_func_8038FCE0 right after the machine
+   gun's reload is stored (s7 the player's record). */
+void rush2049_battle_damage(recomp_context* ctx);
+void rush2049_machine_gun_reload(uint8_t* rdram, recomp_context* ctx);
+
 /* Scenery Culling (src/draw_distance.cpp, us.toml): func_8009EBC0 is given the camera's position, has picked the
    stretch's record, and then tests a word of the scenery visibility mask, the word's byte offset in the record beside
    it. */

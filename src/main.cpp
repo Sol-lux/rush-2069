@@ -58,6 +58,7 @@
 #include "audio_limiter.h"
 #include "audio_resampler.h"
 #include "debug_probe.h"
+#include <cmath>
 #include "musyx_hle.h"
 #include "rom_finder.h"
 
@@ -121,10 +122,17 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
 // --probes: log each change of player 1's buttons as the game reads them.
 static bool log_input = false;
 static int fake_players = 0;
+// --park: the ports --players adds copy port 1 through the menus but get nothing once a race runs (0x801174B4 bit
+// 0x400000), so their cars stay put as targets while port 1 plays.
+static bool park_players = false;
+// --record <file>: port 1's input as the game reads it, a line each time it changes, in --input's format (seconds from
+// the first read), so a session played by hand can be replayed and lined up with --dump-ram's dumps.
+static FILE* record_file = nullptr;
 
 // --input <file>: scripted port 1 input for unattended test runs, and for every port --players adds. Each line is "<seconds> <buttons hex> [x y]",
 // seconds counted from the first input read, and the last line whose time has passed is held. Lines starting with #
-// are comments. Bit 0x10000, which is no N64 button, holds Rewind.
+// are comments. Bit 0x10000, which is no N64 button, holds Rewind; bit 0x20000 drives port 1 only, the ports --players adds
+// left alone (a car that stays still, after the menus they also confirmed).
 struct ScriptedInput {
     double at;
     uint32_t buttons;
@@ -186,11 +194,37 @@ static bool get_n64_input_logged(int player_index, uint16_t* buttons_out, float*
         return true;
     }
     bool ret = recompinput::profiles::get_n64_input(player_index, buttons_out, x_out, y_out);
+    if (park_players && player_index != 0 && player_index < fake_players) {
+        uint8_t* rdram = rush2049::probe_get_rdram();
+        if (rdram != nullptr && (*reinterpret_cast<uint32_t*>(rdram + 0x1174B4) & 0x400000) != 0) {
+            *buttons_out = 0;
+            *x_out = 0.0f;
+            *y_out = 0.0f;
+            return true;
+        }
+    }
+    if (player_index != 0 && player_index < fake_players && input_script.empty()) {
+        ret = recompinput::profiles::get_n64_input(0, buttons_out, x_out, y_out);
+    }
     if (const ScriptedInput* in = scripted_input(); in != nullptr && (player_index == 0 || player_index < fake_players)) {
-        *buttons_out = (uint16_t)in->buttons;
-        *x_out = in->x;
-        *y_out = in->y;
+        bool alone = player_index != 0 && (in->buttons & 0x20000) != 0;
+        *buttons_out = alone ? 0 : (uint16_t)in->buttons;
+        *x_out = alone ? 0.0f : in->x;
+        *y_out = alone ? 0.0f : in->y;
         ret = true;
+    }
+    if (record_file != nullptr && player_index == 0) {
+        static const auto start = std::chrono::steady_clock::now();
+        static uint16_t last_buttons = 0xFFFF;
+        static float last_x = 2.0f, last_y = 2.0f;
+        if (*buttons_out != last_buttons || std::fabs(*x_out - last_x) > 0.02f || std::fabs(*y_out - last_y) > 0.02f) {
+            last_buttons = *buttons_out;
+            last_x = *x_out;
+            last_y = *y_out;
+            double now = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+            fprintf(record_file, "%.3f %04X %.3f %.3f\n", now, last_buttons, last_x, last_y);
+            fflush(record_file);
+        }
     }
     if (log_input && player_index == 0) {
         rush2049::probe_input_reads++;
@@ -673,11 +707,36 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
             load_input_script(argv[++i]);
         }
+        if (strcmp(argv[i], "--park") == 0) {
+            park_players = true;
+        }
+        if (strcmp(argv[i], "--record") == 0 && i + 1 < argc) {
+            record_file = fopen(argv[++i], "w");
+        }
         if (strcmp(argv[i], "--players") == 0 && i + 1 < argc) {
             fake_players = atoi(argv[++i]);
         }
         if (strcmp(argv[i], "--hwwatch") == 0 && i + 1 < argc) {
             rush2049::start_hw_watch((uint32_t)strtoul(argv[++i], nullptr, 16));
+        }
+        // --wwatch <addr>[:width]: --memprobe's F10 without the overlay. Once RDRAM exists, a write-only hardware
+        // breakpoint counts the game functions that write those 1, 2 or 4 bytes (default 4), logged every 5 seconds.
+        if (strcmp(argv[i], "--wwatch") == 0 && i + 1 < argc) {
+            char* end;
+            uint32_t vram = (uint32_t)strtoul(argv[++i], &end, 16);
+            int width = *end == ':' ? atoi(end + 1) : 4;
+            std::thread([vram, width]() {
+                while (rush2049::probe_get_rdram() == nullptr) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
+                rush2049::start_write_watch(vram, width);
+                while (true) {
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
+                    for (const std::string& line : rush2049::write_watch_report(12)) {
+                        fprintf(stderr, "[wwatch %08X] %s\n", vram, line.c_str());
+                    }
+                }
+            }).detach();
         }
         if (strcmp(argv[i], "--memprobe") == 0) {
             rush2049::start_mem_probe();

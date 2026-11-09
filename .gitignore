@@ -1,0 +1,42 @@
+# ROMs and ROM-derived data never go in git
+*.z64
+*.n64
+*.v64
+*.rom
+*.bin
+*.elf
+/baserom*
+/roms/
+/extracted/
+/RecompiledFuncs/
+/RecompiledPatches/
+/rsp/
+# Generated at runtime from the ROM: the hi-res font's and title's packs (src/hires_font.cpp)
+/hires_font/
+/hires_title/
+
+# Build output
+/build/
+/build-release/
+/build-web/
+/out/
+/patches/*.o
+/patches/*.d
+/patches/patches.map
+/mod_template/build/
+*.nrm
+.vs/
+*.user
+__pycache__/
+
+# Reference repos cloned for study, and the Python venv
+/ref/
+/.venv/
+
+# What a run from the checkout writes (portable.txt makes the app keep its data here)
+/portable.txt
+/*.json
+/saves/
+/mods/
+/*.log
+/*.bak

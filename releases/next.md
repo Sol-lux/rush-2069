@@ -1,0 +1,1 @@
+- **Widescreen split screen**: in Battle, each player's points orb now sits behind its score instead of being left behind when the views are widened.

@@ -1,0 +1,83 @@
+diff --git a/ultramodern/include/ultramodern/ultramodern.hpp b/ultramodern/include/ultramodern/ultramodern.hpp
+index da24a61..a46df1c 100644
+--- a/ultramodern/include/ultramodern/ultramodern.hpp
++++ b/ultramodern/include/ultramodern/ultramodern.hpp
+@@ -122,6 +122,9 @@ void init_audio();
+ void set_audio_frequency(uint32_t freq);
+ void queue_audio_buffer(RDRAM_ARG PTR(s16) audio_data, uint32_t byte_count);
+ uint32_t get_remaining_audio_bytes();
++uint32_t get_audio_frequency();
++// Size of the most recent buffer passed to osAiSetNextBuffer (0 before the first one).
++uint32_t get_last_audio_buffer_bytes();
+ 
+ struct audio_callbacks_t {
+     using queue_samples_t = void(int16_t*, size_t);
+diff --git a/ultramodern/src/audio.cpp b/ultramodern/src/audio.cpp
+index 212234e..927f31d 100644
+--- a/ultramodern/src/audio.cpp
++++ b/ultramodern/src/audio.cpp
+@@ -1,5 +1,6 @@
+ #include "ultramodern/ultra64.h"
+ #include "ultramodern/ultramodern.hpp"
++#include <atomic>
+ #include <cassert>
+ #include <cstdio>
+ 
+@@ -23,9 +24,20 @@ void ultramodern::set_audio_frequency(uint32_t freq) {
+     sample_rate = freq;
+ }
+ 
++static std::atomic<uint32_t> last_buffer_bytes{ 0 };
++
++uint32_t ultramodern::get_audio_frequency() {
++    return sample_rate;
++}
++
++uint32_t ultramodern::get_last_audio_buffer_bytes() {
++    return last_buffer_bytes.load();
++}
++
+ void ultramodern::queue_audio_buffer(RDRAM_ARG PTR(int16_t) audio_data_, uint32_t byte_count) {
+     // Ensure that the byte count is an integer multiple of samples.
+     assert((byte_count & 1) == 0);
++    last_buffer_bytes.store(byte_count);
+ 
+     // A game may give its buffer's uncached address (KSEG1, from 0xA0000000), which TO_PTR would put 512 MB past
+     // RDRAM: it's read through the cached one (KSEG0) for the same memory. A buffer that doesn't lie in RDRAM's 8 MB
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+index 343d069..5e9d7d5 100644
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -396,8 +396,30 @@ void vi_thread_func() {
+                 remaining_retraces = cur_state->retrace_count;
+             }
+             if (events_context.ai.mq != NULLPTR) {
+-                // Send a message to the VI queue, and do not set it to be requeued if the queue was full for the same reason as the VI message above.
+-                ultramodern::enqueue_external_message_src(events_context.ai.mq, events_context.ai.msg, false, ultramodern::EventMessageSource::Ai);
++                // The AI interrupt fires each time the AI starts playing a queued buffer, so send one AI event per
++                // buffer's worth of audio played during this VI. A game that queues one buffer per frame gets about
++                // one event per VI; one that keeps a ring of short buffers gets several. Until the game has queued
++                // a buffer, send one per VI. Skip events while the host has plenty of audio queued, so that a
++                // host audio clock slower than this thread's doesn't build up latency without bound.
++                static double ai_bytes_played = 0.0;
++                uint32_t buffer_bytes = ultramodern::get_last_audio_buffer_bytes();
++                int events = 1;
++                if (buffer_bytes != 0) {
++                    double bytes_per_vi = ultramodern::get_audio_frequency() * 4.0 / (60 * ultramodern::get_speed_multiplier());
++                    ai_bytes_played += bytes_per_vi;
++                    events = 0;
++                    while (ai_bytes_played >= buffer_bytes) {
++                        ai_bytes_played -= buffer_bytes;
++                        events++;
++                    }
++                    if (ultramodern::get_remaining_audio_bytes() > 8 * bytes_per_vi) {
++                        events = 0;
++                    }
++                }
++                for (int i = 0; i < events; i++) {
++                    // Requeued only if the game asked for it (MessageQueueControl), for the reason of the VI message above.
++                    ultramodern::enqueue_external_message_src(events_context.ai.mq, events_context.ai.msg, false, ultramodern::EventMessageSource::Ai);
++                }
+             }
+         }
+ 

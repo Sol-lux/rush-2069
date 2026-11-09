@@ -14,9 +14,11 @@ it shipped.
 | Speed on weapon pickup | Planned, harder | A speed change when a weapon is picked up. The pickup routine is known; the car's velocity isn't yet (a short recording driving straight, boosting and braking finds it). |
 | Rammer cooldown, damage and push | Done, played; push still to tune | A 1 s refire rather than 0.333 s, so one long shove costs one ammo; damage 200 + 5 x speed rather than 160 + 7 x speed, then halved by double health like every hit; and a push of the target away from the rammer, flat along the ground: a force of 800000 (an impact's is 330000 plus 66000 up, with spin, which is what flips cars) times the rammer's speed over 80, from 0.25 to 1.25 times. |
 | Rammer handling and reach | Planned | +5% speed and -5% steering while held, and a longer reach (the distance the target must be ahead to count) or a 25% stronger front block. |
-| Sonic Boom | Planned | A slower fire rate, and 15% less top speed while held. Its effect needs a graphical fix. |
-| Pea shooter | Planned | The weapon you have with no pickup: 33% more damage and auto fire. |
+| Sonic Boom push | Done, to play | Thrown out more, lifted and flipped less: the push away from the blast 1.5x (330000 as shipped, `0x80394DD0`), the lift 0.4x (66000, `0x80394DCC`), and the share of the push that goes into the car's spin 0.3x, so the flip is 0.45x. In its impact, `ovl2_func_8038D498`, which only the Sonic Boom (projectile type 7) calls. |
+| Sonic Boom rate and speed | Planned | A slower fire rate, and 15% less top speed while held. Its effect needs a graphical fix. |
+| Pea shooter | Done, to play | The weapon you have with no pickup (type 8): fires while fire is held, 6 a second (its reload as shipped), rather than once a press; a direct hit does 107 rather than 80 (then halved by double health). |
 | Bounce balls | Planned, to look at | Whether the bounce trajectory can be changed. |
+| Cooldown bar | Done, to play | A 64 x 3 pixel bar centred 6 pixels above the bottom of each player's view, filling while the refire timer (record +`0x3AC`) of a weapon with a reload of 0.25 s or more runs, gone when it is ready. Fill rectangles at the end of the frame's list (`func_800EDACC`); each view is found by its viewport + pipe sync + scissor in that list; Battle counts as running while the fire routine's player loop runs (count at `0x801543CA`). |
 | Upside-down self-destruct | Planned | A short countdown that destroys a car left upside down, perhaps with a vignette as control is lost and a 1-1.5 s window where it is vulnerable. |
 
 ## Other ideas
@@ -47,7 +49,7 @@ Found by recording hand-played Battle sessions (`--record`, `--dump-ram`, `--par
 |---|---|
 | Player record | `0x80152818` + player × `0x3B8` (player 0 is player 1) |
 | Car index / car | record +`0x35B`; the car is `0x8014A250` + index × `0x808` |
-| Weapon | record +`0x384`, s8: 8 none, 1 machine gun, 4 missile launcher (3 ammo), 5 Rammer (5), 6 small missile launcher (20, one shot a press), 7 Sonic Boom (5). Invisibility is held elsewhere. |
+| Weapon | record +`0x384`, s8: 8 none, 1 machine gun, 4 missile launcher (3 ammo), 5 Rammer (5), 6 small missile launcher (20, one shot a press), 7 Sonic Boom (5), 3 mines (3; the mine's hit is `func_8010C7F4`: 800, or 280 to a Rammer that meets it head-on), 2 and 0 not named yet (20 each). Invisibility is held elsewhere. |
 | Ammo | record +`0x385`, s8: -1 none; the machine gun comes with 100 |
 | Health | record +`0x386`, s16: 800 full |
 | Last damage taken | record +`0x388`, s16 |

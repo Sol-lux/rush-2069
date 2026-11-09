@@ -37,6 +37,8 @@ namespace rush2049 {
     // Where the game's own commands start in a graphics task's list: after the two commands the frame's list starts with
     // (src/frame_list.cpp).
     uint32_t frame_list_game_start(uint32_t task_list);
+    // Where the game's own commands start in the frame's list being built.
+    uint32_t frame_list_current(uint8_t* rdram);
     // --dump-dl: write the first display list the game submits after the given number of seconds (src/dl_dump.cpp).
     void start_dl_dump(const char* path, double after_seconds);
     // --dump-ram: write all of RDRAM (big-endian) to <prefix>N.bin at each of the comma-separated times in seconds.
@@ -90,6 +92,23 @@ namespace rush2049 {
     // The push on the target's car, in its frame: target and hitter are record positions (+0x8), matrix the target
     // record's (+0x2C), speed the rammer car's (+0x3F0).
     void rammer_push(const float target[3], const float hitter[3], const float matrix[9], float speed, float out[3]);
+    // Battle Mode Alt's pea shooter (weapon 8, held with no pickup): a direct hit's damage times this (as shipped 80).
+    constexpr int pea_damage_num = 4;
+    constexpr int pea_damage_den = 3;
+    int pea_damage(int damage);
+    // Battle Mode Alt's Sonic Boom: its impact's push away from the blast (330000), up (66000), and the share of the
+    // push that goes into the car's spin, which is what flips it, each times these.
+    constexpr float sonic_out_scale = 1.5f;
+    constexpr float sonic_up_scale = 0.4f;
+    constexpr float sonic_spin_scale = 0.3f;
+    // Battle Mode Alt's cooldown bar: drawn under each player's view while the refire timer of a weapon whose reload is
+    // at least cooldown_bar_min_reload runs (so not the machine gun or pea shooter); its size and place in pixels.
+    constexpr float cooldown_bar_min_reload = 0.25f;
+    constexpr int cooldown_bar_width = 64;
+    constexpr int cooldown_bar_height = 3;
+    constexpr int cooldown_bar_bottom_gap = 6;  // from the view's bottom edge
+    // The share of the bar filled: 0 just fired, 1 ready. timer is the refire timer, reload what it was set to.
+    float cooldown_fill(float timer, float reload);
 }
 
 #endif

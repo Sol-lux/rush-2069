@@ -72,6 +72,18 @@ void rush2049_machine_gun_reload(uint8_t* rdram, recomp_context* ctx);
 /* In func_800CE358, as a ram's damage is about to be dealt: the rammer's record, its target's, the rammer's car and the
    damage, a float about to be truncated into a2. */
 void rush2049_rammer_hit(uint8_t* rdram, uint32_t hitter, uint32_t target, uint32_t hitter_car, float* damage);
+/* In the fire routine, where a fire button that isn't newly pressed lets a weapon fire only if it is the machine gun
+   (v0 the weapon, at 1); in the projectile hit routine ovl2_func_8038E114 with s5 the projectile and s0 a direct hit's
+   damage; in the Sonic Boom impact ovl2_func_8038D498 once its forces are loaded (f22 away, f28 up), and after a car's
+   push is added, with the spin's share at sp+0x48 and sp+0x50. */
+void rush2049_pea_auto_fire(recomp_context* ctx);
+void rush2049_pea_damage(uint8_t* rdram, recomp_context* ctx);
+void rush2049_sonic_boom_forces(recomp_context* ctx);
+void rush2049_sonic_boom_spin(uint8_t* rdram, recomp_context* ctx);
+/* The cooldown bar: in the fire routine as its loop over the players starts (Battle is running), and in
+   func_800EDACC after the frame's last call is appended, before its full sync and end. */
+void rush2049_battle_frame(void);
+void rush2049_cooldown_bars(uint8_t* rdram);
 
 /* Scenery Culling (src/draw_distance.cpp, us.toml): func_8009EBC0 is given the camera's position, has picked the
    stretch's record, and then tests a word of the scenery visibility mask, the word's byte offset in the record beside

@@ -2,7 +2,9 @@
 // it shipped. docs/mods.md lists them. They are in the Battle overlay (ovl2):
 //   - double health: every hit does half its damage;
 //   - machine gun spin-up: the machine gun's refire winds up like a chain gun's;
-//   - Rammer cooldown and push: a longer refire, and a ram shoves its target away along the ground.
+//   - Rammer cooldown and push: a longer refire, and a ram shoves its target away along the ground;
+//   - pea shooter: the weapon held with no pickup fires while fire is held and hits a third harder;
+//   - Sonic Boom: more push away from the blast, less lift and less flip.
 //
 // Each Battle player has a record at 0x80152818 + n * 0x3B8 (n 0 for player 1): +0x35B its car's index (the car is
 // 0x8014A250 + index * 0x808), +0x384 the weapon (s8: 8 none, 1 the machine gun), +0x385 its ammo (s8, -1 with no
@@ -34,6 +36,26 @@
 // added to the car's force (car +0x124, cleared each frame). The impact's force is 330000 (0x80394DD0) plus 66000 up
 // (0x80394DCC), and it also adds to the car's spin (+0x13C), which is what flips cars. The ram's push is flat, with
 // no lift and no spin, and scales with the rammer's speed. rammer_push is pure; the test checks it.
+//
+// Pea shooter. Weapon 8 is what a car holds with no pickup (ammo -1, so it never runs out; reload 0.1667 s). The fire
+// routine fires on the fire button (the mask at controller +0x3C, the controller at record +0x380) pressed this frame
+// (+0x4), or held (+0x8) only for weapon 1, the machine gun. With Alt weapon 8 counts as held too, so it fires 6 a
+// second while held, and its direct hits (ovl2_func_8038E114, base damage by projectile type at +6, 80 for 8) do 4/3.
+//
+// Sonic Boom. Its impact, ovl2_func_8038D498 (only projectile type 7 calls it), pushes each car in its radius by the
+// direction from the blast times 330000 (0x80394DD0, f22) plus 66000 up (0x80394DCC, f28), scaled by distance, into
+// the car's force (+0x124), and the push's x and z into its spin (+0x13C, +0x144). With Alt the away force is 1.5x,
+// the lift 0.4x and the spin's share 0.3x, so a car is thrown out more and flipped less.
+//
+// Cooldown bar. With Alt, a weapon with a long reload (cooldown_bar_min_reload and up: not the machine gun or the pea
+// shooter) shows a small bar at the bottom of its player's view while the refire timer (+0x3AC) runs, filling until
+// the weapon is ready, and gone then. The reload is the timer's value when it last went up (the fire routine and the
+// Rammer both set it there). Battle counts as running while the fire routine's loop over the players (count at
+// 0x801543CA) has started within the last quarter second, so the bars never show outside it. Each player's view is
+// found in the frame's top-level list as the game wrote it: a viewport, a pipe sync and the view's scissor, the views
+// in player order. The bars are fill rectangles appended at the end of the frame's list, after the HUD's call and
+// before its full sync and end (func_800EDACC), with their own fill mode and a full-screen scissor; the frame's next
+// list sets its own modes. cooldown_fill is pure; the test checks it.
 
 #include <algorithm>
 #include <atomic>
@@ -59,6 +81,13 @@ struct Spin {
     float interval = 0.0f;    // the reload given at the last shot
 };
 Spin spins[max_players];
+
+struct Cooldown {
+    float last_timer = 0.0f;
+    float reload = 0.0f;
+};
+Cooldown cooldowns[max_players];
+std::atomic<double> battle_seen{ -1.0 };
 
 double now_seconds() {
     static const auto start = std::chrono::steady_clock::now();
@@ -181,4 +210,149 @@ extern "C" void rush2049_rammer_hit(uint8_t* rdram, uint32_t hitter, uint32_t ta
     for (int i = 0; i < 3; i++) {
         write_float(rdram, car + 0x124 + i * 4, read_float(rdram, car + 0x124 + i * 4) + push[i]);
     }
+}
+
+int rush2049::pea_damage(int damage) {
+    return (damage * pea_damage_num + pea_damage_den / 2) / pea_damage_den;
+}
+
+extern "C" void rush2049_pea_auto_fire(recomp_context* ctx) {
+    if (alt.load() && (int32_t)ctx->r2 == 8) {
+        ctx->r1 = 8;  // the held check that follows is for weapon at, so weapon 8 passes it
+    }
+}
+
+extern "C" void rush2049_pea_damage(uint8_t* rdram, recomp_context* ctx) {
+    if (alt.load() && (int8_t)MEM_B(6, ctx->r21) == 8) {
+        ctx->r16 = (gpr)(int64_t)rush2049::pea_damage((int32_t)ctx->r16);
+    }
+}
+
+extern "C" void rush2049_sonic_boom_forces(recomp_context* ctx) {
+    if (alt.load()) {
+        ctx->f22.fl *= rush2049::sonic_out_scale;
+        ctx->f28.fl *= rush2049::sonic_up_scale;
+    }
+}
+
+extern "C" void rush2049_sonic_boom_spin(uint8_t* rdram, recomp_context* ctx) {
+    if (alt.load()) {
+        uint32_t sp = (uint32_t)ctx->r29;
+        write_float(rdram, sp + 0x48, read_float(rdram, sp + 0x48) * rush2049::sonic_spin_scale);
+        write_float(rdram, sp + 0x50, read_float(rdram, sp + 0x50) * rush2049::sonic_spin_scale);
+    }
+}
+
+float rush2049::cooldown_fill(float timer, float reload) {
+    if (reload <= 0.0f) {
+        return 1.0f;
+    }
+    return std::clamp(1.0f - timer / reload, 0.0f, 1.0f);
+}
+
+extern "C" void rush2049_battle_frame(void) {
+    battle_seen.store(now_seconds());
+}
+
+namespace {
+
+constexpr uint32_t dl_head_addr = 0x801497C8;
+constexpr uint32_t player_count_addr = 0x801543CA;
+
+struct Rect {
+    int x0, y0, x1, y1;
+};
+
+void put(uint8_t* rdram, uint32_t& p, uint32_t w0, uint32_t w1) {
+    MEM_W(0, (gpr)(int32_t)p) = (int32_t)w0;
+    MEM_W(4, (gpr)(int32_t)p) = (int32_t)w1;
+    p += 8;
+}
+
+// RGBA5551, twice, as a 16-bit fill colour.
+uint32_t fill_colour(int r, int g, int b) {
+    uint32_t c = (uint32_t)((r << 11) | (g << 6) | (b << 1) | 1);
+    return (c << 16) | c;
+}
+
+void fill(uint8_t* rdram, uint32_t& p, const Rect& r, uint32_t colour) {
+    if (r.x1 <= r.x0 || r.y1 <= r.y0) {
+        return;
+    }
+    put(rdram, p, 0xE7000000, 0);       // gsDPPipeSync
+    put(rdram, p, 0xF7000000, colour);  // gsDPSetFillColor
+    put(rdram, p, 0xF6000000 | ((uint32_t)(r.x1 - 1) << 14) | ((uint32_t)(r.y1 - 1) << 2),
+        ((uint32_t)r.x0 << 14) | ((uint32_t)r.y0 << 2));  // gsDPFillRectangle, inclusive in fill mode
+}
+
+// The views' scissors in the frame's top-level list, in the order drawn.
+int find_views(uint8_t* rdram, uint32_t start, uint32_t end, Rect* views, int max) {
+    int count = 0;
+    for (uint32_t p = start; p + 24 <= end && count < max; p += 8) {
+        if ((uint32_t)MEM_W(0, (gpr)(int32_t)p) != 0xDC080008 || (uint32_t)MEM_W(8, (gpr)(int32_t)p) != 0xE7000000 ||
+            ((uint32_t)MEM_W(16, (gpr)(int32_t)p) >> 24) != 0xED) {
+            continue;
+        }
+        uint32_t w0 = (uint32_t)MEM_W(16, (gpr)(int32_t)p), w1 = (uint32_t)MEM_W(20, (gpr)(int32_t)p);
+        Rect r{ (int)((w0 >> 12) & 0xFFF) / 4, (int)(w0 & 0xFFF) / 4, (int)((w1 >> 12) & 0xFFF) / 4,
+                (int)(w1 & 0xFFF) / 4 };
+        bool seen = false;
+        for (int i = 0; i < count; i++) {
+            seen |= views[i].x0 == r.x0 && views[i].y0 == r.y0 && views[i].x1 == r.x1 && views[i].y1 == r.y1;
+        }
+        if (!seen && r.x1 - r.x0 >= 100 && r.y1 - r.y0 >= 60) {
+            views[count++] = r;
+        }
+    }
+    return count;
+}
+
+} // namespace
+
+extern "C" void rush2049_cooldown_bars(uint8_t* rdram) {
+    if (!alt.load() || now_seconds() - battle_seen.load() > 0.25) {
+        return;
+    }
+    int players = std::clamp((int)(int16_t)MEM_H(0, (gpr)(int32_t)player_count_addr), 0, max_players);
+    float fills[max_players];
+    bool any = false;
+    for (int i = 0; i < players; i++) {
+        uint32_t record = players_base + (uint32_t)i * player_size;
+        float timer = read_float(rdram, record + 0x3AC);
+        Cooldown& c = cooldowns[i];
+        if (timer > c.last_timer + 0.001f) {
+            c.reload = timer;
+        }
+        c.last_timer = timer;
+        fills[i] = -1.0f;
+        if (timer > 0.0f && c.reload >= rush2049::cooldown_bar_min_reload) {
+            fills[i] = rush2049::cooldown_fill(timer, c.reload);
+            any = true;
+        }
+    }
+    if (!any) {
+        return;
+    }
+    uint32_t head = (uint32_t)MEM_W(0, (gpr)(int32_t)dl_head_addr);
+    Rect views[max_players];
+    int view_count = find_views(rdram, rush2049::frame_list_current(rdram), head, views, max_players);
+    uint32_t p = head;
+    put(rdram, p, 0xE7000000, 0);           // gsDPPipeSync
+    put(rdram, p, 0xE3000A01, 0x00300000);  // gsDPSetCycleType(G_CYC_FILL)
+    put(rdram, p, 0xE200001C, 0);           // gsDPSetRenderMode(0, 0)
+    put(rdram, p, 0xED000000, (320u * 4 << 12) | 240u * 4);  // gsDPSetScissor, the whole screen
+    for (int i = 0; i < players && i < view_count; i++) {
+        if (fills[i] < 0.0f) {
+            continue;
+        }
+        const Rect& v = views[i];
+        int x0 = (v.x0 + v.x1 - rush2049::cooldown_bar_width) / 2;
+        int y1 = v.y1 - rush2049::cooldown_bar_bottom_gap;
+        Rect back{ x0 - 1, y1 - rush2049::cooldown_bar_height - 1, x0 + rush2049::cooldown_bar_width + 1, y1 + 1 };
+        Rect bar{ x0, y1 - rush2049::cooldown_bar_height, x0 + (int)(rush2049::cooldown_bar_width * fills[i] + 0.5f),
+                  y1 };
+        fill(rdram, p, back, fill_colour(2, 2, 2));
+        fill(rdram, p, bar, fill_colour(31, 20, 0));
+    }
+    MEM_W(0, (gpr)(int32_t)dl_head_addr) = (int32_t)p;
 }

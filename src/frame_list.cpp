@@ -97,6 +97,12 @@ extern "C" gpr rush2049_frame_task_list(uint8_t* rdram, gpr slot) {
     return list != 0 ? (gpr)(int32_t)list : slot;
 }
 
+uint32_t rush2049::frame_list_current(uint8_t* rdram) {
+    uint32_t slot = (uint32_t)MEM_W(0, (gpr)(int32_t)frame_data_addr) + slot_offset;
+    uint32_t list = buffer_for(rdram, slot);
+    return list != 0 ? list + prefix_bytes : slot;
+}
+
 extern "C" gpr rush2049_frame_list_bytes(uint8_t* rdram, gpr bytes) {
     uint32_t slot = (uint32_t)MEM_W(0, (gpr)(int32_t)frame_data_addr) + slot_offset;
     uint32_t list = buffer_for(rdram, slot);

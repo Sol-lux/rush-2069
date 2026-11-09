@@ -1,5 +1,6 @@
 // Battle Mode Alt (src/battle_tuning.cpp) checks, run by CI: at Original the damage and the machine gun's reload are
-// left alone; Alt halves damage, rounding up, pushes a rammed car flat away from the rammer, and the machine gun fires 5 rounds a second from rest,
+// left alone; Alt halves damage, rounding up, pushes a rammed car flat away from the rammer, lets the pea shooter fire
+// while held and hit a third harder, scales the Sonic Boom's push and spin, and the machine gun fires 5 rounds a second from rest,
 // reaches 30 after 1.5 s of fire held, keeps its spin through a let-go of up to 20 frames and loses it over 1.5 s after.
 
 #include <cmath>
@@ -41,6 +42,11 @@ void set_reload(uint8_t* rdram, float f) {
 }
 
 } // namespace
+
+// battle_tuning.cpp's cooldown bars read the frame's list; the test never draws them.
+uint32_t rush2049::frame_list_current(uint8_t*) {
+    return 0;
+}
 
 int main() {
     // Damage.
@@ -107,6 +113,67 @@ int main() {
         rush2049::rammer_push(same, hitter, identity, 80.0f, out);
         check(out[0] == 0.0f && out[1] == 0.0f && out[2] == 0.0f, "no push with no ground distance");
     }
+
+    // The pea shooter: auto fire and a third more damage, for weapon 8 only.
+    {
+        rush2049::set_battle_mode_alt(true);
+        recomp_context c{};
+        c.r2 = 8;
+        c.r1 = 1;
+        rush2049_pea_auto_fire(&c);
+        check(c.r1 == 8, "Alt lets the pea shooter fire while held");
+        c.r2 = 4;
+        c.r1 = 1;
+        rush2049_pea_auto_fire(&c);
+        check(c.r1 == 1, "other weapons still need a press");
+        check(rush2049::pea_damage(80) == 107, "pea shooter 80 to 107");
+        constexpr uint32_t projectile = 0x80200000;
+        MEM_B(6, (gpr)(int32_t)projectile) = 8;
+        c.r21 = (gpr)(int32_t)projectile;
+        c.r16 = 80;
+        rush2049_pea_damage(rdram, &c);
+        check(c.r16 == 107, "pea shooter hit hook");
+        MEM_B(6, (gpr)(int32_t)projectile) = 2;
+        c.r16 = 80;
+        rush2049_pea_damage(rdram, &c);
+        check(c.r16 == 80, "other projectiles keep their damage");
+        rush2049::set_battle_mode_alt(false);
+        c.r2 = 8;
+        c.r1 = 1;
+        rush2049_pea_auto_fire(&c);
+        check(c.r1 == 1, "Original leaves the pea shooter alone");
+    }
+
+    // The Sonic Boom: forces and spin scaled with Alt only.
+    {
+        recomp_context c{};
+        c.f22.fl = 330000.0f;
+        c.f28.fl = 66000.0f;
+        rush2049::set_battle_mode_alt(false);
+        rush2049_sonic_boom_forces(&c);
+        check(c.f22.fl == 330000.0f && c.f28.fl == 66000.0f, "Original Sonic Boom forces");
+        rush2049::set_battle_mode_alt(true);
+        rush2049_sonic_boom_forces(&c);
+        check(std::fabs(c.f22.fl - 495000.0f) < 1.0f && std::fabs(c.f28.fl - 26400.0f) < 1.0f, "Alt Sonic Boom forces");
+        c.r29 = (gpr)(int32_t)0x80300000;
+        float ten = 10.0f;
+        int32_t bits;
+        std::memcpy(&bits, &ten, 4);
+        MEM_W(0x48, c.r29) = bits;
+        MEM_W(0x50, c.r29) = bits;
+        rush2049_sonic_boom_spin(rdram, &c);
+        float x, z;
+        bits = MEM_W(0x48, c.r29);
+        std::memcpy(&x, &bits, 4);
+        bits = MEM_W(0x50, c.r29);
+        std::memcpy(&z, &bits, 4);
+        check(near(x, 3.0f) && near(z, 3.0f), "Alt Sonic Boom spin share");
+    }
+
+    check(rush2049::cooldown_fill(1.0f, 1.0f) == 0.0f, "just fired: empty");
+    check(near(rush2049::cooldown_fill(0.25f, 1.0f), 0.75f), "a quarter left: three quarters full");
+    check(rush2049::cooldown_fill(0.0f, 1.0f) == 1.0f, "ready: full");
+    check(rush2049::cooldown_fill(0.5f, 0.0f) == 1.0f, "no reload seen: full");
 
     std::printf(failures == 0 ? "battle tuning: all passed\n" : "battle tuning: %d failed\n", failures);
     return failures == 0 ? 0 : 1;

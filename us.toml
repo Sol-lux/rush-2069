@@ -450,6 +450,45 @@ func = "func_800CE358"
 before_vram = 0x800CE768
 text = "    rush2049_rammer_hit(rdram, (uint32_t)ctx->r13, (uint32_t)ctx->r12, (uint32_t)ctx->r8, &ctx->f8.fl);"
 
+# Battle Mode Alt, pea shooter (src/battle_tuning.cpp): in the fire routine, with the fire button not newly pressed,
+# where a held button fires only the machine gun (v0 the weapon, at 1); and in the projectile hit routine with s0 a
+# direct hit's damage and s5 the projectile (its type at +6), before the call to the damage routine.
+[[patches.hook]]
+func = "ovl2_func_8038FCE0"
+before_vram = 0x80390020
+text = "    rush2049_pea_auto_fire(ctx);"
+
+[[patches.hook]]
+func = "ovl2_func_8038E114"
+before_vram = 0x8038F124
+text = "    rush2049_pea_damage(rdram, ctx);"
+
+# Battle Mode Alt, cooldown bar (src/battle_tuning.cpp): in the fire routine as its loop over the players (count at
+# 0x801543CA) starts, which marks Battle as running; and in func_800EDACC after the frame's last call (to the list
+# func_800A48C8 returned) is appended, before its full sync and end, where the bars are appended.
+[[patches.hook]]
+func = "ovl2_func_8038FCE0"
+before_vram = 0x8038FE20
+text = "    rush2049_battle_frame();"
+
+[[patches.hook]]
+func = "func_800EDACC"
+before_vram = 0x800EDB4C
+text = "    rush2049_cooldown_bars(rdram);"
+
+# Battle Mode Alt, Sonic Boom (src/battle_tuning.cpp): in its impact, once the away (f22) and up (f28) forces are
+# loaded, before the loop over cars; and after a car's push is added to its force, before its x and z (sp+0x48,
+# sp+0x50) go into the car's spin.
+[[patches.hook]]
+func = "ovl2_func_8038D498"
+before_vram = 0x8038D5C0
+text = "    rush2049_sonic_boom_forces(ctx);"
+
+[[patches.hook]]
+func = "ovl2_func_8038D498"
+before_vram = 0x8038D734
+text = "    rush2049_sonic_boom_spin(rdram, ctx);"
+
 # Ghost Arrows (src/ghost_arrows.cpp): in the scene draw's poly loop, at the start of a poly's turn (s6 the poly, s7
 # the display list pointer's address, sp+0x16C its index) and at the end, where every path through it meets; and
 # after the camera's last model tree, or where it would be.

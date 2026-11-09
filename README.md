@@ -83,7 +83,10 @@ option has an Original value that runs the game as it shipped.
   rounds a second to 30 over a second and a half, keeps its speed for a moment after you let go, then winds down over
   a second and a half (as shipped it fires a steady 15 a second). The Rammer fires at most once a second, so a long shove
   no longer spends two charges; its damage rises less with speed, so a fast ram no longer nearly kills on its own; and
-  a ram pushes the other car away along the ground, harder the faster you hit.
+  a ram pushes the other car away along the ground, harder the faster you hit. The gun you have with no pickup fires
+  while you hold the button and hits a third harder. The Sonic Boom throws cars out further but lifts and flips them
+  less. A weapon with a long reload (missiles, mines, Rammer, Sonic Boom) shows a small bar at the bottom of your view
+  that fills until it can fire again.
 - **Large Controller Paks**: about 1.9 MB of save space per pak instead of 32 KiB, so ghosts and profiles don't
   run out of room.
 - **Rumble and saves together**: every controller has both a Controller Pak and a Rumble Pak in, so races rumble and

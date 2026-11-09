@@ -40,3 +40,14 @@ __pycache__/
 /mods/
 /*.log
 /*.bak
+
+# Battle probe harness: keep the scripts, not the recordings
+/probe_battle/human/
+/probe_battle/ep*/
+/probe_battle/STOP
+# Local build logs
+/configure.log
+/ninja.log
+/recompile.log
+/recomp.log
+/probe_battle/*.log

@@ -82,3 +82,28 @@ Reload by weapon type, from that table:
 | 0, 2, 6, 8 | 0.1667 s (`0x80394EB8`) | 6 a second |
 | 4, 7 | 1 s | 1 a second (7 comes with 5 ammo) |
 | 3, 5 | not set by the table | |
+
+## Lighting
+
+Graphics enhancements in RT64 (each a Graphics-tab option whose Original value is the picture as shipped; changes to
+RT64 go in `runtime-patches/`). VibinToast's RT64 fork for Jet Force Gemini (`VibinToast/rt64`, branch `jfg`, MIT) has
+bloom, ambient occlusion, fog, a vignette, shadow maps, ray-traced shadows and water reflections, and is the starting
+point for each.
+
+| Enhancement | Status | Approach |
+|---|---|---|
+| Bloom | Planned, first | Bright parts of the scene blurred and added back, once per frame before the HUD. The fork finds the HUD as the first draw without a depth test after at least 12 that write depth; if that splits a frame wrongly here, a marker at the scene's end (below) does it instead. |
+| HDR output | Planned | An HDR swapchain and a float scene target; the game's colours stop at white, so the draws that glow (flames, explosions, neon) are picked out. RT64's "HDR" setting is precision only. |
+| Shadows | Planned | Contact shadows from the depth buffer toward the sun first, shadow maps from the frame's draws after. The cars' shadows as shipped are blob quads (texture `0x9807`). |
+| Reflections | Planned | Screen-space reflections on chosen surfaces (the bay, glass, wet road). Chrome is already the game's own environment map. |
+
+## What the game keeps where (lighting)
+
+| What | Where |
+|---|---|
+| The frame's two lists | 3D at `0x801497C8`, HUD at `0x80149438` (`src/frame_list.cpp`); both built by `func_800A04C4`, the HUD list sealed by `func_800A48C8` and called and sent by `func_800EDACC` |
+| A view | `func_8009F058`: viewport, pipe sync and scissor at `0x8009F128`-`0x8009F268` (in that order, which `src/widescreen.cpp` relies on), the perspective at `0x8009F4F0`, the node tree at `0x8009F9BC` |
+| Views | count at `0x80146204`; table `0x8017A510`, `0x48` a view; cameras `0x8015B70` + view × `0x98` |
+| Scene to HUD | `func_800A04C4` at `0x800A0754`: after the last view, before the HUD's full-screen scissor. A view starts at `0x800A0724` and ends at `0x800A0730` (view index in a0). |
+| A model's lights | node +`0x1A` (s16, negative for unlit) and +`0x1C` (pointer to its light block); `func_8009DD88` sends 1 or 2 directional lights and an ambient from the block's +8, +0 and +`0x18`. There's no single sun: each model carries its own, so a sun for a view is its brightest directional light, as RT64 picks. The block's byte layout is still to confirm from a RAM dump. |
+| Default lights | pointer `0x801406B8` to `0x8012EA18`, set once and never written |

@@ -53,4 +53,10 @@ rt64-0015              glow (setGlowTextures): with bloom on, the draws that sam
                        a mask over the scene's depth (an ubershader pipeline's variant, less-or-equal, no depth write),
                        and the mask's bright parts are added to the bloom at each texture's gain; setTextureDumpDirectory
                        for --dump-textures
+rt64-0016              shadows (setShadows): every vertex as an orthographic sun sees it, from RT64's world position
+                       (the modelview's; this game keeps the camera's rotation in the projection), around a point ahead
+                       of its view's camera; before each 3D scene's HUD, per view, its opaque draws (indexed, perspective,
+                       depth test and write) drawn from the sun into a 4096 shadow map, then again over the scene, each
+                       pixel whose depth is the draw's own multiplied by the shadow tint where the map covers it (4x4
+                       taps); a debug view
 ```

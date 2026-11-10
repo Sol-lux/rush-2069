@@ -29,6 +29,15 @@ namespace RT64 {
     void setPictureAdjust(float brightness, float contrast, float gamma);
     // rt64-0014: HDR output, read when the swap chain is made.
     void setHdrOutput(bool enabled, float paperWhiteNits, float peakNits, float highlights);
+    // rt64-0016: shadows from a sun, a strength of 0 for none (the same struct as RT64's rt64_state.h).
+    struct ShadowSettings {
+        float strength = 0.0f;
+        float direction[3] = { 0.3f, -1.0f, 0.2f };
+        float range = 5000.0f;
+        float tint[3] = { 0.5f, 0.55f, 0.7f };
+        bool debugView = false; // in shadow red, lit green, outside the shadow map blue
+    };
+    void setShadows(const ShadowSettings &settings);
 }
 
 namespace {
@@ -219,6 +228,18 @@ namespace {
     };
     const std::string bloom_option = "bloom";
 
+    enum class Shadows {
+        Original,
+        Light,
+        Dark,
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> shadows_options = {
+        {Shadows::Original, "Original", "Original"},
+        {Shadows::Light, "Light", "Light"},
+        {Shadows::Dark, "Dark", "Dark"},
+    };
+    const std::string shadows_option = "shadows";
+
     // Brightness, Contrast and Gamma: five steps each, Original in the middle (index 2).
     const std::vector<recomp::config::ConfigOptionEnumOption> brightness_options = {
         {0, "Darker2", "Darker 2"}, {1, "Darker", "Darker"}, {2, "Original", "Original"},
@@ -236,6 +257,23 @@ namespace {
     const std::string contrast_option = "contrast";
     const std::string gamma_option = "gamma";
     uint32_t picture_brightness = 2, picture_contrast = 2, picture_gamma = 2;
+
+    // Shadows (runtime-patches/rt64-0016-shadows.patch): the option's strength, and the developer flags' sun
+    // direction and debug view (rush2049::set_shadow_tuning).
+    uint32_t shadows_level = 0;
+    float shadows_sun[3] = { 0.3f, -1.0f, 0.2f };
+    bool shadows_debug = false;
+    void apply_shadows() {
+        static constexpr float strength[] = { 0.0f, 0.5f, 0.8f };
+        RT64::ShadowSettings settings;
+        settings.strength = strength[shadows_level];
+        for (int i = 0; i < 3; i++) {
+            settings.direction[i] = shadows_sun[i];
+        }
+
+        settings.debugView = shadows_debug;
+        RT64::setShadows(settings);
+    }
     void apply_picture() {
         static constexpr float brightness[] = { -0.08f, -0.04f, 0.0f, 0.04f, 0.08f };
         static constexpr float contrast[] = { 0.8f, 0.9f, 1.0f, 1.1f, 1.2f };
@@ -374,6 +412,18 @@ bool rush2049::split_screen_expand() {
 
 bool rush2049::menu_expand() {
     return menu_ratio_setting.load(std::memory_order_relaxed) == MenuRatio::Expand;
+}
+
+// --shadow-sun and --shadow-debug (docs/building.md): the sun's direction, and the shadow debug view.
+void rush2049::set_shadow_tuning(const float *sun_direction, bool debug_view) {
+    if (sun_direction != nullptr) {
+        for (int i = 0; i < 3; i++) {
+            shadows_sun[i] = sun_direction[i];
+        }
+    }
+
+    shadows_debug = shadows_debug || debug_view;
+    apply_shadows();
 }
 
 static Accessory accessory() {
@@ -774,6 +824,19 @@ void rush2049::init_config() {
 
         RT64::setGlowTextures(hashes, gains, value == (uint32_t)Bloom::Original ? 0 : uint32_t(std::size(glow)));
     });
+
+    graphics.add_enum_option(
+        shadows_option,
+        "Shadows",
+        "Shadows from the sun: the cars, buildings, bridges and signs cast them onto the road and onto each other."
+        "<br/>"
+        "<b>Original:</b> no shadows but the cars' own, as the game shipped. <b>Light</b> and <b>Dark</b> are how "
+        "deep they are.",
+        shadows_options,
+        Shadows::Original
+    );
+    // Called on load too. RT64's sun shadows (runtime-patches/rt64-0016-shadows.patch).
+    on_apply(graphics, shadows_option, [](uint32_t value) { shadows_level = std::min(value, 2u); apply_shadows(); });
 
     graphics.add_enum_option(
         brightness_option,

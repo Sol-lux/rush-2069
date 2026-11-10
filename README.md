@@ -70,6 +70,8 @@ option has an Original value that runs the game as it shipped.
   it.
 - **Bloom**: a soft glow around the bright parts of the picture (the sky, lights, flames, shine on the cars), at Low,
   Medium or High. The HUD doesn't glow. Off as the game shipped.
+- **Shadows**: shadows from the sun, Light or Dark: the cars, trees, buildings and bridges cast them onto the road and
+  onto each other. Off as the game shipped.
 - **Brightness, contrast and gamma**: five steps each, over the whole picture, the HUD too.
 - **HDR output**: for an HDR display with HDR on in Windows, the picture is sent as HDR, with the game's white at a
   brightness you pick and its brightest parts lifted above it, up to the display's peak. The menus follow the same
@@ -134,6 +136,7 @@ shipped, set every Original value:
 | See-through scenery in order | See-Through Order | `graphics.json` `see_through_order` | `"Sorted"` | `"Original"` |
 | Whole ghost arrows | Ghost Arrows | `graphics.json` `ghost_arrows` | `"Whole"` | `"Original"` |
 | Bloom | Bloom | `graphics.json` `bloom` | `"Original"` (`"Low"`, `"Medium"`, `"High"`) | `"Original"` |
+| Shadows | Shadows | `graphics.json` `shadows` | `"Original"` (`"Light"`, `"Dark"`) | `"Original"` |
 | Brightness | Brightness | `graphics.json` `brightness` | `"Original"` (`"Darker2"`, `"Darker"`, `"Brighter"`, `"Brighter2"`) | `"Original"` |
 | Contrast | Contrast | `graphics.json` `contrast` | `"Original"` (`"Lower2"`, `"Lower"`, `"Higher"`, `"Higher2"`) | `"Original"` |
 | Gamma | Gamma | `graphics.json` `gamma` | `"Original"` (`"Darker2"`, `"Darker"`, `"Brighter"`, `"Brighter2"`) | `"Original"` |

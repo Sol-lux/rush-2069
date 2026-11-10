@@ -772,6 +772,15 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "--dump-textures") == 0 && i + 1 < argc) {
             RT64::setTextureDumpDirectory(argv[++i]);
         }
+        if (strcmp(argv[i], "--shadow-sun") == 0 && i + 1 < argc) {
+            float sun[3] = { 0.3f, -1.0f, 0.2f };
+            if (sscanf(argv[++i], "%f,%f,%f", &sun[0], &sun[1], &sun[2]) == 3) {
+                rush2049::set_shadow_tuning(sun, false);
+            }
+        }
+        if (strcmp(argv[i], "--shadow-debug") == 0) {
+            rush2049::set_shadow_tuning(nullptr, true);
+        }
         if (strcmp(argv[i], "--dump-dl") == 0 && i + 2 < argc) {
             const char* path = argv[++i];
             rush2049::start_dl_dump(path, atof(argv[++i]));

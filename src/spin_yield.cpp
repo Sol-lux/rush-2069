@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "rush2049_game.h"
 #include "ultramodern/ultramodern.hpp"
 
 extern "C" void yield_self_1ms(RDRAM_ARG1);
@@ -41,6 +42,7 @@ struct Spinning {
 }
 
 extern "C" void rush2049_spin_yield(uint8_t* rdram) {
+    rush2049::sync_hw_spin(rdram);  // --sync-hw counts the yields (src/sync_probe.cpp)
     PTR(OSThread) next_ = ultramodern::thread_queue_peek(PASS_RDRAM ultramodern::running_queue);
     while (next_ != NULLPTR && std::find(spinners.begin(), spinners.end(), next_) != spinners.end()) {
         next_ = TO_PTR(OSThread, next_)->next;

@@ -720,6 +720,12 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "--frame-lock") == 0) {
             rush2049::set_frame_lock(true);
         }
+        if (strcmp(argv[i], "--sync-hw") == 0 && i + 1 < argc) {
+            rush2049::sync_hw(argv[++i]);
+        }
+        if (strcmp(argv[i], "--sync-random") == 0 && i + 1 < argc) {
+            rush2049::sync_random(argv[++i]);
+        }
         if (strcmp(argv[i], "--sync-hash") == 0 && i + 1 < argc) {
             rush2049::sync_hash(argv[++i]);
         }

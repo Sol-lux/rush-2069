@@ -28,7 +28,8 @@
 // (us.toml) gets the steps thread 5 has taken since the boot (a step is a read of the controllers, so two runs of
 // the same input agree on it, where thread 7's frames before the first step depend on the machine). Some twenty
 // other places in the game (the scheduler's pacing among them) still read the real count. What still differs between
-// two runs is what --sync-hash (src/sync_probe.cpp) measures.
+// two runs is what --sync-hash (src/sync_probe.cpp) measures; --sync-hw logs each step, each wait for a frame and
+// the retraces each frame really counted, to find which of them two runs part at.
 
 #include <cstdio>
 
@@ -61,6 +62,9 @@ bool rush2049::frame_lock() {
 }
 
 extern "C" void rush2049_frame_lock_step(uint8_t* rdram) {
+    if (thread_id(rdram) == 5) {
+        rush2049::sync_hw_event(rdram, 'S', steps);
+    }
     if (!locked || thread_id(rdram) != 5) {
         return;
     }
@@ -74,7 +78,10 @@ extern "C" void rush2049_frame_lock_step(uint8_t* rdram) {
     steps++;
 }
 
-extern "C" void rush2049_frame_lock_frame(uint8_t* rdram) {
+extern "C" void rush2049_frame_lock_frame(uint8_t* rdram, uint32_t site) {
+    if (thread_id(rdram) == 7) {
+        rush2049::sync_hw_event(rdram, 'F', site);
+    }
     if (!locked || thread_id(rdram) != 7) {
         return;
     }
@@ -88,7 +95,8 @@ extern "C" void rush2049_frame_lock_frame(uint8_t* rdram) {
     frame_taken = true;
 }
 
-extern "C" uint32_t rush2049_frame_lock_retraces(uint32_t retraces) {
+extern "C" uint32_t rush2049_frame_lock_retraces(uint8_t* rdram, uint32_t retraces) {
+    rush2049::sync_hw_event(rdram, 'R', retraces);
     return locked ? 1 : retraces;
 }
 

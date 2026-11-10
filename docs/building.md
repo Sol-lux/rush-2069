@@ -62,6 +62,8 @@ the process you started, from a DPI-aware process (`SetProcessDPIAware()` first,
 --sync-replay <file>         every read gets that file's controllers instead; two replays should play the same
 --sync-hash <file>           a line each read in a race: read, tick count, timer and a hash of the race's memory
 --sync-dump <prefix> <n,..>  all of RDRAM at those reads, to diff two runs (src/sync_probe.cpp)
+--sync-random <file>         a line each call that steps the random state: read, thread, function, caller, state
+--sync-hw <file>             a line each step, wait for a frame, frame's real retraces and read's spin yields
 --frame-lock                 one frame of the frame loop per step of the race thread, each 1/60 s; wants Game Frame
                              Rate 60 (src/frame_lock.cpp)
 --profile <after> <secs>     sample every thread each ms, print top functions (Windows)

@@ -14,6 +14,16 @@
 //                        (rush2049::race_memory, src/rewind.cpp)
 // --sync-dump <prefix> <reads>   all of RDRAM, as it is in memory, to <prefix><read>.bin at each of those reads
 //                        (comma-separated numbers), to see which words two runs differ in
+// --sync-random <file>   a line each time a function that steps the random state (0x8011735C) is entered (us.toml
+//                        hooks the entry of each: func_8008B2E4's callers and those with the generator written out
+//                        in place): the read's number, the thread, the function, its caller and the state. Two
+//                        replays' files part at the first call one of them made and the other did not
+// --sync-hw <file>       where the game meets the machine's timing (src/frame_lock.cpp, src/spin_yield.cpp), a line
+//                        each: the read's number, the thread, the kind (S: thread 5 steps, value its steps; F: thread
+//                        7 at a wait for a frame, value the hook's address, 0x800FD510 the load's; R: the retraces the
+//                        frame really counted; Y: that thread's spin yields since the last read), then the graphics
+//                        task counter (0x8002EB70), the frame loop's state (0x801174B4) and the tick count. Logged
+//                        with or without --frame-lock; the first line two replays part at names what split them
 //
 // Two replays of one recording that write the same hash file played the same race. Where they part, the first line
 // that differs is the read to look at.
@@ -26,6 +36,7 @@
 #include <vector>
 
 #include "recomp.h"
+#include "ultramodern/ultramodern.hpp"
 #include "rush2049_game.h"
 #include "rush2049_hooks.h"
 
@@ -38,6 +49,11 @@ constexpr size_t pads_bytes = 4 * 6;              // four OSContPads
 
 FILE* record_file = nullptr;
 FILE* hash_file = nullptr;
+FILE* random_file = nullptr;
+FILE* hw_file = nullptr;
+uint32_t spins[16] = {};
+constexpr uint32_t gfx_counter_addr = 0x8002EB70;  // graphics tasks in flight
+constexpr uint32_t random_state_addr = 0x8011735C;
 std::vector<uint8_t> replay;
 std::string dump_prefix;
 std::vector<uint32_t> dump_reads;
@@ -98,6 +114,48 @@ void rush2049::sync_hash(const char* path) {
     }
 }
 
+void rush2049::sync_random(const char* path) {
+    random_file = fopen(path, "w");
+    if (random_file == nullptr) {
+        fprintf(stderr, "--sync-random: can't open %s\n", path);
+    }
+}
+
+extern "C" void rush2049_sync_random(uint8_t* rdram, uint32_t func, uint32_t caller) {
+    if (random_file == nullptr) {
+        return;
+    }
+    int thread = (int)TO_PTR(OSThread, ultramodern::this_thread())->id;
+    fprintf(random_file, "%u %d %08x %08x %08x\n", reads, thread, func, caller, read_word(rdram, random_state_addr));
+}
+
+void rush2049::sync_hw(const char* path) {
+    hw_file = fopen(path, "w");
+    if (hw_file == nullptr) {
+        fprintf(stderr, "--sync-hw: can't open %s\n", path);
+    }
+}
+
+namespace {
+void hw_line(uint8_t* rdram, int thread, char kind, uint32_t value) {
+    fprintf(hw_file, "%u %d %c %08x %u %08x %d\n", reads, thread, kind, value, read_word(rdram, gfx_counter_addr),
+        read_word(rdram, game_state_addr), (int32_t)read_word(rdram, tick_count_addr));
+}
+}
+
+void rush2049::sync_hw_event(uint8_t* rdram, char kind, uint32_t value) {
+    if (hw_file != nullptr) {
+        hw_line(rdram, (int)TO_PTR(OSThread, ultramodern::this_thread())->id, kind, value);
+    }
+}
+
+void rush2049::sync_hw_spin(uint8_t* rdram) {
+    if (hw_file != nullptr) {
+        uint32_t t = (uint32_t)TO_PTR(OSThread, ultramodern::this_thread())->id;
+        spins[t < 16 ? t : 15]++;
+    }
+}
+
 void rush2049::sync_dump(const char* prefix, const char* reads_list) {
     dump_prefix = prefix;
     for (const char* p = reads_list; *p != 0;) {
@@ -133,6 +191,20 @@ extern "C" void rush2049_sync_pads(uint8_t* rdram, gpr pads_addr) {
         if (reads % 60 == 0) {
             fflush(hash_file);
         }
+    }
+    if (hw_file != nullptr) {
+        for (int t = 0; t < 16; t++) {
+            if (spins[t] != 0) {
+                hw_line(rdram, t, 'Y', spins[t]);
+                spins[t] = 0;
+            }
+        }
+        if (reads % 60 == 0) {
+            fflush(hw_file);
+        }
+    }
+    if (random_file != nullptr && reads % 60 == 0) {
+        fflush(random_file);
     }
     for (uint32_t at : dump_reads) {
         if (at == reads) {

@@ -299,17 +299,17 @@ text = "    rush2049_frame_lock_step(rdram);"
 [[patches.hook]]
 func = "func_800C9AE0"
 before_vram = 0x800C9B88
-text = "    rush2049_frame_lock_frame(rdram);"
+text = "    rush2049_frame_lock_frame(rdram, 0x800C9B88u);"
 
 [[patches.hook]]
 func = "func_800FD464"
 before_vram = 0x800FD510
-text = "    rush2049_frame_lock_frame(rdram);"
+text = "    rush2049_frame_lock_frame(rdram, 0x800FD510u);"
 
 [[patches.hook]]
 func = "func_800013F4"
 before_vram = 0x800014C4
-text = "    ctx->r10 = rush2049_frame_lock_retraces((uint32_t)ctx->r10); MEM_W(-0x1468, (gpr)(int32_t)0x80030000) = ctx->r10;"
+text = "    ctx->r10 = rush2049_frame_lock_retraces(rdram, (uint32_t)ctx->r10); MEM_W(-0x1468, (gpr)(int32_t)0x80030000) = ctx->r10;"
 
 # The frame lock's 60ths timer: each read of the game's retrace count (0x8002EB64) in the timer module (the frame's
 # time, the clock, the countdown) gets the steps thread 5 has taken instead (src/frame_lock.cpp).
@@ -733,3 +733,145 @@ text = "    rush2049_scenery_stretch(rdram, ctx);"
 func = "func_8009EBC0"
 before_vram = 0x8009EFEC
 text = "    ctx->r12 = rush2049_scenery_mask(ctx->r12, ctx->r6);"
+
+# The sync probe's --sync-random (src/sync_probe.cpp): the entry of every function that steps the random state
+# (0x8011735C; func_8008B2E4 and the generator written out in place), so two replays can be compared call by call.
+[[patches.hook]]
+func = "func_8008B69C"
+before_vram = 0x8008B69C
+text = "    rush2049_sync_random(rdram, 0x8008B69Cu, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_8008D93C"
+before_vram = 0x8008D93C
+text = "    rush2049_sync_random(rdram, 0x8008D93Cu, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_8008E408"
+before_vram = 0x8008E408
+text = "    rush2049_sync_random(rdram, 0x8008E408u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_8008EA10"
+before_vram = 0x8008EA10
+text = "    rush2049_sync_random(rdram, 0x8008EA10u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_80090308"
+before_vram = 0x80090308
+text = "    rush2049_sync_random(rdram, 0x80090308u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_80090FEC"
+before_vram = 0x80090FEC
+text = "    rush2049_sync_random(rdram, 0x80090FECu, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800930A4"
+before_vram = 0x800930A4
+text = "    rush2049_sync_random(rdram, 0x800930A4u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800B23E0"
+before_vram = 0x800B23E0
+text = "    rush2049_sync_random(rdram, 0x800B23E0u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800BB140"
+before_vram = 0x800BB140
+text = "    rush2049_sync_random(rdram, 0x800BB140u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800CADA4"
+before_vram = 0x800CADA4
+text = "    rush2049_sync_random(rdram, 0x800CADA4u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800D348C"
+before_vram = 0x800D348C
+text = "    rush2049_sync_random(rdram, 0x800D348Cu, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800D50E4"
+before_vram = 0x800D50E4
+text = "    rush2049_sync_random(rdram, 0x800D50E4u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800D6160"
+before_vram = 0x800D6160
+text = "    rush2049_sync_random(rdram, 0x800D6160u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800DEF68"
+before_vram = 0x800DEF68
+text = "    rush2049_sync_random(rdram, 0x800DEF68u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800E0050"
+before_vram = 0x800E0050
+text = "    rush2049_sync_random(rdram, 0x800E0050u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800EB690"
+before_vram = 0x800EB690
+text = "    rush2049_sync_random(rdram, 0x800EB690u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800EB90C"
+before_vram = 0x800EB90C
+text = "    rush2049_sync_random(rdram, 0x800EB90Cu, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800F0100"
+before_vram = 0x800F0100
+text = "    rush2049_sync_random(rdram, 0x800F0100u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800F0914"
+before_vram = 0x800F0914
+text = "    rush2049_sync_random(rdram, 0x800F0914u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800F34D8"
+before_vram = 0x800F34D8
+text = "    rush2049_sync_random(rdram, 0x800F34D8u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "func_800FAF6C"
+before_vram = 0x800FAF6C
+text = "    rush2049_sync_random(rdram, 0x800FAF6Cu, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "ovl2_func_8038AA8C"
+before_vram = 0x8038AA8C
+text = "    rush2049_sync_random(rdram, 0x8038AA8Cu, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "ovl2_func_8038E114"
+before_vram = 0x8038E114
+text = "    rush2049_sync_random(rdram, 0x8038E114u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "ovl2_func_8038FCE0"
+before_vram = 0x8038FCE0
+text = "    rush2049_sync_random(rdram, 0x8038FCE0u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "ovl2_func_80390B10"
+before_vram = 0x80390B10
+text = "    rush2049_sync_random(rdram, 0x80390B10u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "ovl2_func_80390D38"
+before_vram = 0x80390D38
+text = "    rush2049_sync_random(rdram, 0x80390D38u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "ovl2_func_80390F60"
+before_vram = 0x80390F60
+text = "    rush2049_sync_random(rdram, 0x80390F60u, (uint32_t)ctx->r31);"
+
+[[patches.hook]]
+func = "ovl2_func_8039133C"
+before_vram = 0x8039133C
+text = "    rush2049_sync_random(rdram, 0x8039133Cu, (uint32_t)ctx->r31);"

@@ -52,11 +52,17 @@ namespace rush2049 {
         uint32_t lo, hi;
     };
     const std::vector<MemoryRange>& race_memory();
-    // The sync probe (src/sync_probe.cpp): --sync-record, --sync-replay, --sync-hash and --sync-dump.
+    // The sync probe (src/sync_probe.cpp): --sync-record, --sync-replay, --sync-hash, --sync-dump, --sync-random and --sync-hw.
     void sync_record(const char* path);
     void sync_replay(const char* path);
     void sync_hash(const char* path);
     void sync_dump(const char* prefix, const char* reads);
+    void sync_random(const char* path);
+    // --sync-hw: where the game meets the machine's timing. kind 'S' thread 5 steps, 'F' thread 7 at a wait for a
+    // frame (value: the hook's address), 'R' the retraces a frame really counted; sync_hw_spin a spin yield.
+    void sync_hw(const char* path);
+    void sync_hw_event(uint8_t* rdram, char kind, uint32_t value);
+    void sync_hw_spin(uint8_t* rdram);
     // The frame lock (src/frame_lock.cpp): --frame-lock, one frame of the frame loop for each step, 1/60 s each.
     void set_frame_lock(bool on);
     bool frame_lock();

@@ -16,8 +16,8 @@ Everything that has to be done to play Race, Stunt and Battle online, and what i
 
 ## What is known
 
-Measured with the sync probe (`src/sync_probe.cpp`; `--sync-record`, `--sync-replay`, `--sync-hash`, `--sync-dump`
-in `docs/building.md`): a 2-player Battle round recorded once and replayed twice, memory compared at the same
+Measured with the sync probe (`src/sync_probe.cpp`; `--sync-record`, `--sync-replay`, `--sync-hash`, `--sync-dump`,
+`--sync-random`, `--sync-hw` in `docs/building.md`): a 2-player Battle round recorded once and replayed twice, memory compared at the same
 controller reads.
 
 - **Input.** Thread 5 (`func_800E7808`) waits for a retrace, reads the four controllers (`func_800E73D8`,
@@ -68,8 +68,29 @@ round, in each mode, and when two different machines do.
 - [ ] The read in 8 that differs, and the lasting difference. Neither is at a fixed read: over three pairs of
       replays the reads in 8 started at 1725, 1727 and 3217, and the lasting difference at 4866, 4898 and about
       4705. Where the runs differ for good, the random state (`0x8011735C`) differs, and so does a table of 0x44-byte
-      entries at `0x80132D7C`-`0x80133014`. No other word of the race's memory differs before those. So the next
-      step is the random generator's callers (below).
+      entries at `0x80132D7C`-`0x80133014`. No other word of the race's memory differs before those.
+      `--sync-random` logs every entry of the 28 functions that step the random state. In a race, 96% of the calls
+      are thread 7's, nearly all of them `func_8008B69C` and `func_8008D93C`; thread 5 calls `func_800E0050`,
+      `func_800DEF68` and `func_800D348C`. In one pair of locked replays the two logs were the same, call for call,
+      with the same state at the same reads, to read 8104 (the end of the shorter run), yet the hashes differed
+      from read 518, the race's first tick. So the random generator is not the only cause. In another pair, dumped at
+      reads 517, 518 and 581, the frame loop's state (`0x801174B4`) and the random state already differed at read
+      517: one run was a frame further into the race's start than the other. From read 518 the words that differ
+      include floats at `0x801192BC`-`0x80119370` and `0x8011A374`-`0x8011A39C` (0.183 against 0.2, i.e. 11 against
+      12 60ths) and counters beside them, which look like times counted in frames.
+      `--sync-hw` logs where the game meets the machine's timing: each step of thread 5, each of thread 7's waits for
+      a frame (and which wait), the retraces each frame really counted, the graphics task counter and the spin
+      yields. Every read of the real retrace count (`0x8002EB64`) is in the timer module, which the lock already
+      covers. In two more pairs the hardware logs were the same line for line (steps, waits, the frame loop's state,
+      the ticks, one retrace a frame), and in one of them the random logs were too, yet the hashes still differed.
+      In that pair, dumped before the race, the race's memory was the same at reads 1 to 400. By 450 two words
+      differed, and at the race's start they still did: sound IDs in the cars' looping-sound table (`0x80140420`, 0x54
+      bytes a car, `func_800E0050`, e.g. `0x801404B4`). The sound manager hands out those IDs on the audio thread's
+      own clock, so sound feeds back into the race's memory. In the other pair the random state and words at
+      `0x80152B8C` and `0x80160358`-`0x801603BC` also differed by read 516. So there is more than one cause, and which
+      ones show up changes from run to run. The next steps: give sounds IDs that don't depend on the audio thread (or
+      show the race only uses them to stop and change sounds, and leave them out of the hash), then find what writes
+      the random state and `0x80160358` before the race in a pair where they split.
 - [ ] Set the random state at the start of a match from a seed both sides share.
 - [ ] Find every caller of the random generator and sort them: those in drawing code (effects, sounds) must either
       run the same number of times on every machine or use a generator of their own.

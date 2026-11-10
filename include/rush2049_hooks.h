@@ -123,12 +123,14 @@ void rush2049_rewind_frame_draw(uint8_t* rdram, recomp_context* ctx);
 
 /* The sync probe (src/sync_probe.cpp): after thread 5 reads the controllers, the four OSContPads it read. */
 void rush2049_sync_pads(uint8_t* rdram, gpr pads_addr);
+/* --sync-random: a function that steps the random state is entered, from caller. */
+void rush2049_sync_random(uint8_t* rdram, uint32_t func, uint32_t caller);
 
 /* The frame lock (src/frame_lock.cpp): thread 5 before it reads the controllers, thread 7 at its wait for a frame,
    and the retraces a frame counts, which the lock makes 1. */
 void rush2049_frame_lock_step(uint8_t* rdram);
-void rush2049_frame_lock_frame(uint8_t* rdram);
-uint32_t rush2049_frame_lock_retraces(uint32_t retraces);
+void rush2049_frame_lock_frame(uint8_t* rdram, uint32_t site);
+uint32_t rush2049_frame_lock_retraces(uint8_t* rdram, uint32_t retraces);
 uint32_t rush2049_frame_lock_time(uint32_t retrace_count);
 
 /* Save Ghosts (src/controller_pak.cpp): at the end of a Ghost Race, before the game checks whether to offer

@@ -1,0 +1,65 @@
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -878,10 +878,12 @@
+                 worker->commandList->setIndexBuffer(&indexBufferView);
+                 for (uint32_t pos = 0; pos < shadowPosition; pos++) {
+                     const InstanceDrawCall &drawCall = instanceDrawCallVector[rasterScene.instanceIndices[pos]];
+-                    if (!isShadowDraw(drawCall) || (drawCall.triangles.shadowView != view)) {
++                    if ((drawCall.type != InstanceDrawCall::Type::IndexedTriangles) || !drawCall.triangles.shadowReceiver ||
++                        drawCall.triangles.scissor.isEmpty() || (drawCall.triangles.shadowView != view)) {
+                         continue;
+                     }
+ 
++                    cb.ownDepth = drawCall.triangles.shadowCaster ? 1.0f : 0.0f;
+                     cb.screenScale = drawCall.triangles.screenScale;
+                     cb.screenOffset = drawCall.triangles.screenOffset;
+                     worker->commandList->setScissors(drawCall.triangles.scissor);
+@@ -2370,6 +2372,12 @@
+                                 (proj.type == Projection::Type::Perspective) && !triangles.vertexTestZ && (triangles.faceCount > 0) &&
+                                 om.zCmp() && om.zUpd() && (om.zMode() != ZMODE_DEC) && (om.zSource() != G_ZS_PRIM) &&
+                                 (om.cycleType() != G_CYC_COPY) && (om.cycleType() != G_CYC_FILL);
++                            // Takes shadows without casting them: the rest of the 3D world's draws, the ground among them,
++                            // which the game draws without writing depth, so the receive pass can only check that nothing
++                            // nearer was drawn over it (ShadowCB::ownDepth).
++                            triangles.shadowReceiver = (shadowPositionsCount > 0) && (instanceDrawCall.type == InstanceDrawCall::Type::IndexedTriangles) &&
++                                (proj.type == Projection::Type::Perspective) && !triangles.vertexTestZ && (triangles.faceCount > 0) &&
++                                (om.cycleType() != G_CYC_COPY) && (om.cycleType() != G_CYC_FILL);
+                             triangles.shadowView = proj.transformsIndex;
+                         }
+ 
+--- a/src/render/rt64_framebuffer_renderer_call.h
++++ b/src/render/rt64_framebuffer_renderer_call.h
+@@ -49,6 +49,7 @@
+                 const RenderPipeline *glowSourcePipeline;
+                 // Rush 2049 patch: an indexed draw of the 3D world that writes depth, so casts and takes sun shadows.
+                 bool shadowCaster;
++                bool shadowReceiver; // takes them: every perspective indexed draw of the 3D world, casters too
+                 uint32_t shadowView; // its projection's transforms index: each view draws its own shadow map
+             } triangles;
+ 
+--- a/src/shared/rt64_shadow.h
++++ b/src/shared/rt64_shadow.h
+@@ -19,6 +19,7 @@
+         float bias;          // receive: subtracted from the receiver's depth from the sun, in the map's depth units
+         float3 tint;         // receive: what a pixel fully in shadow is multiplied by
+         float debugView;     // receive: 1 for the debug colours (RT64::ShadowSettings::debugView)
++        float ownDepth;      // receive: 1 when the draw wrote the depth there (a caster), 0 when it wrote none (the ground)
+     };
+ #ifdef HLSL_CPU
+ };
+--- a/src/shaders/ShadowPS.hlsl
++++ b/src/shaders/ShadowPS.hlsl
+@@ -44,7 +44,12 @@
+ #endif
+ 
+ float4 PSMain(in float4 iPosition : SV_POSITION, in float3 iSunPos : TEXCOORD0) : SV_TARGET {
+-    if (abs(sceneDepth(int2(iPosition.xy)) - iPosition.z) > 4e-6f) {
++    // A draw that writes depth is in view where the depth there is about its own: near enough for the road, whose
++    // depth comes out a little different, while the see-through parts of a tree's picture (which wrote none) have the
++    // sky's or something else's behind them. A draw that writes no depth (the ground's decals) is in view where nothing
++    // nearer was drawn over it.
++    const float scene = sceneDepth(int2(iPosition.xy));
++    if ((gConstants.ownDepth > 0.5f) ? (abs(scene - iPosition.z) > 2e-4f) : (scene < iPosition.z - 2e-5f)) {
+         discard;
+     }
+ 

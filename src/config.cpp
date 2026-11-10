@@ -452,6 +452,11 @@ void rush2049::start_shadow_gate() {
     }).detach();
 }
 
+void rush2049::set_shadow_debug(bool debug_view) {
+    shadows_debug = debug_view;
+    apply_shadows();
+}
+
 static Accessory accessory() {
     auto value = recompui::config::get_general_config().get_option_value(accessory_option);
     return static_cast<Accessory>(std::get<uint32_t>(value));

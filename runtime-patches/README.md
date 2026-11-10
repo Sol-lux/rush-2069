@@ -61,4 +61,10 @@ rt64-0016              shadows (setShadows): every vertex as an orthographic sun
                        taps); a debug view
 rt64-0017              with shadows on, G_CULLDL (rt64-0008) ends nothing, so what lies off the view (a building behind
                        the camera) still reaches the shadow map; the view clips it as before
+rt64-0018              shadows: each of the 16 taps compared against the receiving surface's own plane at that texel
+                       (receiver plane bias from its map position's derivatives), not a bias by its screen-space
+                       slope, so curved roads stop shadowing themselves in their triangles and flickering with the view
+rt64-0019              shadows on the ground: every perspective indexed draw takes shadows (shadowReceiver), not only
+                       the casters; a draw that writes depth where the depth there is within 2e-4 of its own (the road's
+                       came out a little off, so the exact test missed it), one that writes none where nothing nearer is
 ```

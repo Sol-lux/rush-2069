@@ -10,6 +10,9 @@
 // working directory, one line per track ("<hash> <azimuth> <elevation>"), and a track's saved sun comes back whenever
 // that track is loaded again. Those lines are what the game's own per-track suns are then made from.
 //
+// Print Screen saves a screenshot of the game's window into shots/ (by probe_battle/shot.py, as the game runs on), and
+// Delete turns Shadows' debug colours on and off, so one spot can be shot both ways.
+//
 // The keys come from an SDL event watch and are queued for the tuner's own thread, as --memprobe's are
 // (src/mem_probe.cpp); the overlay neither captures input nor the mouse, so the race goes on underneath.
 
@@ -20,7 +23,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
+#include <filesystem>
 #include <deque>
 #include <map>
 #include <mutex>
@@ -28,6 +34,8 @@
 #include <thread>
 
 #ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
 #include "SDL.h"
 #else
 #include "SDL2/SDL.h"
@@ -42,7 +50,7 @@ namespace {
 constexpr const char* suns_path = "shadow_suns.txt";
 constexpr float pi = 3.14159265f;
 
-enum class Cmd { Toggle, Left, Right, Up, Down };
+enum class Cmd { Toggle, Left, Right, Up, Down, Shot, Debug };
 
 std::mutex cmd_mutex;
 std::deque<Cmd> cmds;
@@ -59,6 +67,13 @@ int SDLCALL key_watch(void*, SDL_Event* event) {
                 return 0;
             }
             cmd = Cmd::Toggle;
+            break;
+        case SDL_SCANCODE_PRINTSCREEN:
+        case SDL_SCANCODE_DELETE:
+            if (event->key.repeat) {
+                return 0;
+            }
+            cmd = event->key.keysym.scancode == SDL_SCANCODE_DELETE ? Cmd::Debug : Cmd::Shot;
             break;
         case SDL_SCANCODE_KP_4: case SDL_SCANCODE_HOME: cmd = Cmd::Left; break;
         case SDL_SCANCODE_KP_6: case SDL_SCANCODE_END: cmd = Cmd::Right; break;
@@ -156,6 +171,7 @@ void tuner_thread() {
     uint32_t key = 0;
     Sun sun = default_sun();
     bool visible = false;
+    bool debug = false;
     recompui::ContextId context = recompui::ContextId::null();
     recompui::Label* label = nullptr;
 
@@ -177,6 +193,24 @@ void tuner_thread() {
         }
         bool changed = false;
         for (Cmd cmd : pending) {
+            if (cmd == Cmd::Shot) {
+                // The game's window as it is now, by tools' capture script, into shots/ (made if missing).
+                char name[64];
+                time_t now_time = time(nullptr);
+                strftime(name, sizeof(name), "shots/%Y%m%d-%H%M%S.png", localtime(&now_time));
+                std::filesystem::create_directories("shots");
+                std::string command = "py -3 probe_battle/shot.py " + std::to_string(GetCurrentProcessId()) + " " + name;
+                std::thread([command, path = std::string(name)]() {
+                    int result = std::system(command.c_str());
+                    fprintf(stderr, "[shadow tuner] screenshot %s%s\n", path.c_str(), result == 0 ? "" : " failed");
+                }).detach();
+                continue;
+            }
+            if (cmd == Cmd::Debug) {
+                debug = !debug;
+                rush2049::set_shadow_debug(debug);
+                continue;
+            }
             if (cmd == Cmd::Toggle) {
                 if (context == recompui::ContextId::null()) {
                     using namespace recompui;
@@ -236,9 +270,11 @@ void tuner_thread() {
                          "Shadow sun, track %08X%s\n\n"
                          "Azimuth   %3.0f  %s   Home / End\n"
                          "Elevation %3.0f  %s   Page Down / Page Up\n\n"
-                         "Saved to %s as it changes. Insert hides this.",
+                         "Saved to %s as it changes. Insert hides this.\n"
+                         "Print Screen: a screenshot into shots/. Delete: debug colours (red shadow, green lit, blue\n"
+                         "outside the map) %s.",
                          key, suns.count(key) ? "" : " (default)", sun.azimuth, bar(sun.azimuth, 360.0f).c_str(),
-                         sun.elevation, bar(sun.elevation, 90.0f).c_str(), suns_path);
+                         sun.elevation, bar(sun.elevation, 90.0f).c_str(), suns_path, debug ? "on" : "off");
             }
             context.open();
             label->set_text(text);

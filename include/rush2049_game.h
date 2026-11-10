@@ -80,6 +80,8 @@ namespace rush2049 {
     void set_shadow_tuning(const float *sun_direction, bool debug_view);
     // Shadows only while a track is loaded, none in the menus (src/config.cpp).
     void start_shadow_gate();
+    // The shadow debug view on or off (--shadow-tuner's Delete key).
+    void set_shadow_debug(bool debug_view);
     // Ghost Arrows (src/ghost_arrows.cpp): whether the ghosts' arrows are drawn after the scenery, each whole or not at
     // all by whether its tip can be seen (Whole), rather than amid it and covered pixel by pixel (Original).
     void set_ghost_arrows_whole(bool on);

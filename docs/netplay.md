@@ -49,9 +49,9 @@ round, in each mode, and when two different machines do.
       game down; it never skips.
 - [x] Find how the frame loop waits for a frame and where it takes its time from (`src/frame_lock.cpp`'s header).
 - [ ] Which of the frame loop's work is logic (changes the race) and which is only drawing.
-- [ ] The game's 60ths timer (`0x8002EB64`, the scheduler's retrace count) and the clock and countdown from it
-      follow the retraces even under `--frame-lock`; about twenty places read it. The locked replays part where it
-      jumps, so this is next.
+- [x] The game's 60ths timer (`0x8002EB64`, the scheduler's retrace count) under `--frame-lock`: every read of it
+      in the timer module (the frame's time, the clock, the countdown) gets thread 5's steps since the boot instead.
+      The about twenty other places that read the count (the scheduler's pacing among them) still get the real one.
 - [x] `--frame-lock` (`src/frame_lock.cpp`): one frame of the frame loop per step of thread 5, each 1/60 s. It
       boots and holds 60 steps a second. Two locked boots into the attract race still differ from its first tick, and
       the race starts on a different read (552 and 933), as unlocked boots do (513 and 791): the loads take machine
@@ -60,6 +60,12 @@ round, in each mode, and when two different machines do.
       A race recorded with the lock and replayed twice with it: the tick count is the same at every read, and the
       race's memory hashes the same from the race's first read (511) to read 1097, about 10 s, then differs to the
       end. The timer's count of 60ths was 1 apart between the two runs until then and became 3 apart at read 1098.
+      With the timer locked too, the same recording replayed twice: the ticks agree at every read, and the hashes
+      agree from the race's first read to read 1724, about 20 s. From there one read in 8 differs and the next
+      seven agree again, so the race's state stays the same and something that changes every 8 frames is caught at
+      a different point; from read 4866 they differ to the end. Counting thread 7's frames instead of thread 5's
+      steps puts the two runs 18 frames apart before the first step (the boot's frames), and they never agree.
+- [ ] The read in 8 that differs from read 1724, and the lasting difference from read 4866.
 - [ ] Set the random state at the start of a match from a seed both sides share.
 - [ ] Find every caller of the random generator and sort them: those in drawing code (effects, sounds) must either
       run the same number of times on every machine or use a generator of their own.

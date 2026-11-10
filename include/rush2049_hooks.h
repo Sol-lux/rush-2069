@@ -129,6 +129,7 @@ void rush2049_sync_pads(uint8_t* rdram, gpr pads_addr);
 void rush2049_frame_lock_step(uint8_t* rdram);
 void rush2049_frame_lock_frame(uint8_t* rdram);
 uint32_t rush2049_frame_lock_retraces(uint32_t retraces);
+uint32_t rush2049_frame_lock_time(uint32_t retrace_count);
 
 /* Save Ghosts (src/controller_pak.cpp): at the end of a Ghost Race, before the game checks whether to offer
    SAVE GHOST. */

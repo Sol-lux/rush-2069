@@ -23,9 +23,12 @@
 // the other (rush2049_spin_yield skips a thread that spins too, and thread 5 kept it). Only threads 5 and 7
 // take part: func_800C9AE0 has other callers, and the hooks check which thread they are on.
 //
-// Not yet locked: the game's 60ths timer (the scheduler's retrace count, 0x8002EB64) and the clock and countdown
-// worked out from it (0x8002EB90, func_80001578) still follow the retraces, and some twenty places in the game read
-// the count. What still differs between two runs is what --sync-hash (src/sync_probe.cpp) measures.
+// The game's 60ths timer (the scheduler's retrace count, 0x8002EB64), which the frame's time, the clock (0x8002EB90)
+// and the countdown (func_80001578) are worked out from, counts steps instead: every read of it in the timer module
+// (us.toml) gets the steps thread 5 has taken since the boot (a step is a read of the controllers, so two runs of
+// the same input agree on it, where thread 7's frames before the first step depend on the machine). Some twenty
+// other places in the game (the scheduler's pacing among them) still read the real count. What still differs between
+// two runs is what --sync-hash (src/sync_probe.cpp) measures.
 
 #include <cstdio>
 
@@ -41,6 +44,7 @@ bool locked = false;
 bool frame_turn = false;
 bool step_taken = false;   // thread 5 has stepped since it last handed over
 bool frame_taken = false;  // thread 7 is running a frame it was handed
+uint32_t steps = 0;        // steps thread 5 has taken since the boot
 
 uint32_t thread_id(uint8_t* rdram) {
     return (uint32_t)TO_PTR(OSThread, ultramodern::this_thread())->id;
@@ -67,6 +71,7 @@ extern "C" void rush2049_frame_lock_step(uint8_t* rdram) {
         }
     }
     step_taken = true;
+    steps++;
 }
 
 extern "C" void rush2049_frame_lock_frame(uint8_t* rdram) {
@@ -85,4 +90,11 @@ extern "C" void rush2049_frame_lock_frame(uint8_t* rdram) {
 
 extern "C" uint32_t rush2049_frame_lock_retraces(uint32_t retraces) {
     return locked ? 1 : retraces;
+}
+
+extern "C" uint32_t rush2049_frame_lock_time(uint32_t retrace_count) {
+    if (!locked) {
+        return retrace_count;
+    }
+    return steps;
 }

@@ -67,4 +67,6 @@ rt64-0018              shadows: each of the 16 taps compared against the receivi
 rt64-0019              shadows on the ground: every perspective indexed draw takes shadows (shadowReceiver), not only
                        the casters; a draw that writes depth where the depth there is within 2e-4 of its own (the road's
                        came out a little off, so the exact test missed it), one that writes none where nothing nearer is
+rt64-0020              shadows: see-through draws (ZMODE_XLU, such as a tunnel's light panels) cast nothing, though
+                       they write depth; they still take shadows
 ```

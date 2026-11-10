@@ -1,0 +1,624 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 21fffea..5022767 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -819,6 +819,8 @@ if (NOT RT64_WGSL)
+     build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomExtractPSMS.hlsl" "-D BLOOM_EXTRACT" "-D MULTISAMPLING")
+     build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomBlurPS.hlsl" "-D BLOOM_BLUR")
+     build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomCompositePS.hlsl" "-D BLOOM_COMPOSITE")
++    build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomGlowPS.hlsl" "-D BLOOM_GLOW")
++    build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomGlowPSMS.hlsl" "-D BLOOM_GLOW" "-D MULTISAMPLING")
+ endif()
+ build_pixel_shader(  rt64 "src/shaders/PostProcessPS.hlsl")
+ 
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+index 351a5a6..e833c30 100644
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -9,6 +9,8 @@
+ 
+ #include <algorithm>
+ #include <cstring>
++#include <mutex>
++#include <unordered_map>
+ 
+ #if defined(_MSC_VER) && !defined(__clang__)
+ #   include <intrin.h>
+@@ -55,6 +57,44 @@ namespace RT64 {
+     float bloomThreshold() { return bloomThresholdValue.load(std::memory_order_relaxed); }
+     float bloomRadius() { return bloomRadiusValue.load(std::memory_order_relaxed); }
+ 
++    // Rush 2049 patch: the textures that glow, each with its gain; read when a workload's draws are set up.
++    static std::mutex glowMutex;
++    static std::unordered_map<uint64_t, float> glowGains;
++    static std::atomic<bool> glowAny{ false };
++
++    void setGlowTextures(const uint64_t *hashes, const float *gains, uint32_t count) {
++        std::scoped_lock lock(glowMutex);
++        glowGains.clear();
++        for (uint32_t i = 0; i < count; i++) {
++            glowGains[hashes[i]] = gains[i];
++        }
++
++        glowAny.store(count > 0, std::memory_order_relaxed);
++    }
++
++    float glowGain(uint64_t textureHash) {
++        if (!glowAny.load(std::memory_order_relaxed)) {
++            return 0.0f;
++        }
++
++        std::scoped_lock lock(glowMutex);
++        auto it = glowGains.find(textureHash);
++        return (it != glowGains.end()) ? it->second : 0.0f;
++    }
++
++    static std::mutex textureDumpMutex;
++    static std::filesystem::path textureDumpPath;
++
++    void setTextureDumpDirectory(const char *path) {
++        std::scoped_lock lock(textureDumpMutex);
++        textureDumpPath = (path != nullptr) ? std::filesystem::u8path(path) : std::filesystem::path();
++    }
++
++    static std::filesystem::path textureDumpDirectory() {
++        std::scoped_lock lock(textureDumpMutex);
++        return textureDumpPath;
++    }
++
+     static std::atomic<float> pictureBrightness{ 0.0f };
+     static std::atomic<float> pictureContrast{ 1.0f };
+     static std::atomic<float> pictureGamma{ 1.0f };
+@@ -327,6 +367,12 @@ namespace RT64 {
+         rdp = std::make_unique<RDP>(this);
+ 
+         reset();
++
++        // Rush 2049 patch: RT64's texture dump from the start (setTextureDumpDirectory), as its debugger's button does.
++        dumpingTexturesDirectory = textureDumpDirectory();
++        if (!dumpingTexturesDirectory.empty()) {
++            std::filesystem::create_directories(dumpingTexturesDirectory);
++        }
+     }
+ 
+     State::~State() { }
+diff --git a/src/hle/rt64_state.h b/src/hle/rt64_state.h
+index afa10a3..6ac5e9a 100644
+--- a/src/hle/rt64_state.h
++++ b/src/hle/rt64_state.h
+@@ -52,6 +52,16 @@ namespace RT64 {
+     float bloomThreshold();
+     float bloomRadius();
+ 
++    // Rush 2049 patch: the textures that glow (by RT64's texture hash, the one its texture packs use), each with a gain;
++    // with bloom on, the draws that sample one are drawn again into a mask whose bright parts the bloom adds on top of
++    // the scene's (FramebufferRenderer::submitRasterScene). glowGain is 0 for a texture not in the list.
++    void setGlowTextures(const uint64_t *hashes, const float *gains, uint32_t count);
++    float glowGain(uint64_t textureHash);
++
++    // Rush 2049 patch: dump every texture drawn into this directory from the start (the debugger's "Start dumping
++    // textures"); null or empty for none. Read when the State is made.
++    void setTextureDumpDirectory(const char *path);
++
+     // Rush 2049 patch: the player's picture settings, applied by the VI pass to the whole picture (VideoInterfacePS):
+     // brightness added (0 none), contrast around mid grey (1 none) and a gamma exponent (1 none, below 1 brighter).
+     void setPictureAdjust(float brightness, float contrast, float gamma);
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+index 1dd31f7..ec5694f 100644
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -581,6 +581,23 @@ namespace RT64 {
+         }
+     };
+ 
++    // Rush 2049 patch: glow (BloomPS.hlsl, BLOOM_GLOW): the glow mask and the scene's colour.
++    struct BloomGlowDescriptorSet : RenderDescriptorSetBase {
++        uint32_t gInput;
++        uint32_t gScene;
++
++        BloomGlowDescriptorSet(RenderDevice *device = nullptr) {
++            builder.begin();
++            gInput = builder.addTexture(1);
++            gScene = builder.addTexture(2);
++            builder.end();
++
++            if (device != nullptr) {
++                create(device);
++            }
++        }
++    };
++
+     struct RSPModifyDescriptorSet : RenderDescriptorSetBase {
+         uint32_t srcModifyPos;
+         uint32_t screenPos;
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index 0f32fca..409aaff 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -178,6 +178,8 @@ namespace RT64 {
+         hitGroupVector.clear();
+         bloomDescriptorSets.clear(); // Rush 2049 patch: the previous workload has finished on the GPU by now
+         bloomBuffersRetired.clear();
++        glowDescriptorSets.clear();
++        glowMasksRetired.clear();
+         renderIndicesVector.clear();
+         rspSmoothNormalVector.clear();
+         frameParams.viewUbershaders = ubershadersVisible;
+@@ -645,6 +647,111 @@ namespace RT64 {
+ 
+             // Bright parts of the scene, downsampled into buffer 0; blurred across into 1 and down back into 0.
+             bloomPass(shaderLibrary->bloomExtract.pipeline.get(), colorTarget->texture.get(), 0, sceneSet);
++
++            // Rush 2049 patch: glow. The draws before this point that sample a texture that glows (RT64::glowGain) are
++            // drawn again, with the depth as the scene left it, into a mask, a group at a time (by gain, and those with
++            // no depth test apart), and each group's bright parts are added to buffer 0 at its gain. A group without a
++            // depth test (the sky) counts only where the scene still shows it.
++            auto isGlowDraw = [&](const InstanceDrawCall &drawCall) {
++                const bool isTriangles = (drawCall.type == InstanceDrawCall::Type::IndexedTriangles) ||
++                    (drawCall.type == InstanceDrawCall::Type::RawTriangles) || (drawCall.type == InstanceDrawCall::Type::RegularRect);
++                return isTriangles && !drawCall.triangles.scissor.isEmpty() && (drawCall.triangles.glowGain > 0.0f);
++            };
++
++            std::vector<std::pair<bool, float>> glowGroups;
++            for (uint32_t pos = 0; pos < bloomPosition; pos++) {
++                const InstanceDrawCall &drawCall = instanceDrawCallVector[rasterScene.instanceIndices[pos]];
++                if (!isGlowDraw(drawCall)) {
++                    continue;
++                }
++
++                const std::pair<bool, float> group(!drawCall.triangles.shaderDesc.otherMode.zCmp(), drawCall.triangles.glowGain);
++                if (std::find(glowGroups.begin(), glowGroups.end(), group) == glowGroups.end()) {
++                    glowGroups.push_back(group);
++                }
++            }
++
++            GlowMask *glowMask = nullptr;
++            if (!glowGroups.empty() && (shaderLibrary->bloomGlow.pipeline != nullptr)) {
++                glowMask = getGlowMask(worker, colorTarget, fbStorage->depthTarget);
++            }
++
++            for (const std::pair<bool, float> &group : glowGroups) {
++                if (glowMask == nullptr) {
++                    break;
++                }
++
++                worker->commandList->barriers(RenderBarrierStage::GRAPHICS, {
++                    RenderTextureBarrier(glowMask->texture.get(), RenderTextureLayout::COLOR_WRITE),
++                    RenderTextureBarrier(colorTarget->texture.get(), RenderTextureLayout::SHADER_READ)
++                });
++                worker->commandList->setFramebuffer(glowMask->framebuffer.get());
++                worker->commandList->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 0.0f));
++                switchToGraphicsPipeline();
++                for (uint32_t pos = 0; pos < bloomPosition; pos++) {
++                    const uint32_t i = rasterScene.instanceIndices[pos];
++                    const InstanceDrawCall &drawCall = instanceDrawCallVector[i];
++                    if (!isGlowDraw(drawCall) || (drawCall.triangles.glowGain != group.second) ||
++                        (!drawCall.triangles.shaderDesc.otherMode.zCmp() != group.first))
++                    {
++                        continue;
++                    }
++
++                    const RenderPipeline *glowPipeline = RasterShader::glowPipeline(drawCall.triangles.glowSourcePipeline);
++                    if (glowPipeline == nullptr) {
++                        continue;
++                    }
++
++                    if (drawCall.type == InstanceDrawCall::Type::IndexedTriangles) {
++                        worker->commandList->setVertexBuffers(0, indexedVertexViews.data(), uint32_t(indexedVertexViews.size()), vertexInputSlots.data());
++                        worker->commandList->setIndexBuffer(drawCall.triangles.vertexTestZ ? &testZIndexBufferView : &indexBufferView);
++                    }
++                    else {
++                        worker->commandList->setVertexBuffers(0, rawVertexViews.data(), uint32_t(rawVertexViews.size()), vertexInputSlots.data());
++                        worker->commandList->setIndexBuffer(nullptr);
++                    }
++
++                    worker->commandList->setScissors(drawCall.triangles.scissor);
++                    worker->commandList->setPipeline(glowPipeline);
++                    if (usePerDrawTextures) {
++                        worker->commandList->setGraphicsDescriptorSet(drawTextureSets[drawTextureSetIndices[i]]->get(), 1);
++                    }
++
++                    interop::RasterParams glowParams = {};
++                    glowParams.renderIndex = i;
++                    glowParams.screenScale = drawCall.triangles.screenScale;
++                    glowParams.screenOffset = drawCall.triangles.screenOffset;
++#               ifdef RT64_RENDER_INDEX_BY_INSTANCE
++                    glowParams.renderIndex = 0;
++                    firstInstance = i;
++#               endif
++                    worker->commandList->setGraphicsPushConstants(0, &glowParams);
++                    drawCallTriangles(drawCall);
++                }
++
++                std::unique_ptr<BloomGlowDescriptorSet> glowSet = std::make_unique<BloomGlowDescriptorSet>(worker->device);
++                glowSet->setTexture(glowSet->gInput, glowMask->texture.get(), RenderTextureLayout::SHADER_READ, glowMask->textureView.get());
++                glowSet->setTexture(glowSet->gScene, colorTarget->texture.get(), RenderTextureLayout::SHADER_READ, colorTarget->textureView.get());
++                worker->commandList->barriers(RenderBarrierStage::GRAPHICS, {
++                    RenderTextureBarrier(glowMask->texture.get(), RenderTextureLayout::SHADER_READ),
++                    RenderTextureBarrier(buffers->texture[0].get(), RenderTextureLayout::COLOR_WRITE)
++                });
++
++                interop::BloomCB glowCB = cb;
++                glowCB.threshold = 0.35f;
++                glowCB.knee = 0.25f;
++                glowCB.intensity = group.second * 2.0f;
++                glowCB.padding = group.first ? 1 : 0;
++                worker->commandList->setFramebuffer(buffers->framebuffer[0].get());
++                worker->commandList->setPipeline(shaderLibrary->bloomGlow.pipeline.get());
++                worker->commandList->setGraphicsPipelineLayout(shaderLibrary->bloomGlow.pipelineLayout.get());
++                worker->commandList->setGraphicsDescriptorSet(glowSet->get(), 0);
++                worker->commandList->setViewports(smallViewport);
++                worker->commandList->setScissors(smallRect);
++                worker->commandList->setGraphicsPushConstants(0, &glowCB);
++                worker->commandList->drawInstanced(3, 1, 0, 0);
++                glowDescriptorSets.emplace_back(std::move(glowSet));
++            }
+             cb.directionX = 1; cb.directionY = 0;
+             bloomPass(shaderLibrary->bloomBlur.pipeline.get(), buffers->texture[0].get(), 1, bufferSet[0]);
+             cb.directionX = 0; cb.directionY = 1;
+@@ -896,6 +1003,44 @@ namespace RT64 {
+         return bloomBuffers.back().get();
+     }
+ 
++    FramebufferRenderer::GlowMask *FramebufferRenderer::getGlowMask(RenderWorker *worker, const RenderTarget *colorTarget, const RenderTarget *depthTarget) {
++        for (const std::unique_ptr<GlowMask> &mask : glowMasks) {
++            if ((mask->depthTexture == depthTarget->texture.get()) && (mask->width == colorTarget->width) && (mask->height == colorTarget->height) &&
++                (mask->format == colorTarget->format) && (mask->sampleCount == colorTarget->multisampling.sampleCount))
++            {
++                return mask.get();
++            }
++        }
++
++        // Many targets or sizes: the old masks are retired, and freed once this workload has finished.
++        if (glowMasks.size() >= 4) {
++            for (std::unique_ptr<GlowMask> &mask : glowMasks) {
++                glowMasksRetired.emplace_back(std::move(mask));
++            }
++
++            glowMasks.clear();
++        }
++
++        std::unique_ptr<GlowMask> mask = std::make_unique<GlowMask>();
++        mask->depthTexture = depthTarget->texture.get();
++        mask->width = colorTarget->width;
++        mask->height = colorTarget->height;
++        mask->format = colorTarget->format;
++        mask->sampleCount = colorTarget->multisampling.sampleCount;
++        RenderClearValue clearValue = RenderClearValue::Color(RenderColor(), mask->format);
++        mask->texture = worker->device->createTexture(RenderTextureDesc::ColorTarget(mask->width, mask->height, mask->format, colorTarget->multisampling, &clearValue));
++        if (mask->texture == nullptr) {
++            return nullptr;
++        }
++
++        mask->texture->setName("Glow mask");
++        mask->textureView = mask->texture->createTextureView(RenderTextureViewDesc::Texture2D(mask->format));
++        const RenderTexture *colorTexture = mask->texture.get();
++        mask->framebuffer = worker->device->createFramebuffer(RenderFramebufferDesc(&colorTexture, 1, depthTarget->texture.get(), true));
++        glowMasks.emplace_back(std::move(mask));
++        return glowMasks.back().get();
++    }
++
+     RenderDescriptorSet *FramebufferRenderer::makeBloomDescriptorSet(RenderWorker *worker, RenderTexture *texture, RenderTextureView *textureView) {
+         std::unique_ptr<RenderTargetCopyDescriptorSet> set = std::make_unique<RenderTargetCopyDescriptorSet>(worker->device);
+         set->setTexture(set->gInput, texture, RenderTextureLayout::SHADER_READ, textureView);
+@@ -1896,6 +2041,21 @@ namespace RT64 {
+                     {
+                         triangles.shaderDesc = call.shaderDesc;
+ 
++                        // Rush 2049 patch: glow, by the textures the draw samples (RT64::glowGain).
++                        triangles.glowGain = 0.0f;
++                        for (uint32_t t = 0; t < call.callDesc.tileCount; t++) {
++                            triangles.glowGain = std::max(triangles.glowGain, RT64::glowGain(drawData.callTiles[call.callDesc.tileIndex + t].tmemHashOrID));
++                        }
++
++                        triangles.glowSourcePipeline = nullptr;
++                        if (triangles.glowGain > 0.0f) {
++                            const bool glowCopyMode = (call.shaderDesc.otherMode.cycleType() == G_CYC_COPY);
++                            triangles.glowSourcePipeline = rasterShaderUber->getPipeline(
++                                !glowCopyMode && call.shaderDesc.otherMode.zCmp() && (call.shaderDesc.otherMode.zMode() != ZMODE_DEC),
++                                !glowCopyMode && call.shaderDesc.otherMode.zUpd(),
++                                (call.shaderDesc.otherMode.cvgDst() == CVG_DST_WRAP) || (call.shaderDesc.otherMode.cvgDst() == CVG_DST_SAVE));
++                        }
++
+                         RasterShader *gpuShader = p.ubershadersOnly ? nullptr : p.rasterShaderCache->getGPUShader(call.shaderDesc);
+                         triangles.decalMarkPipeline = nullptr;
+                         if (gpuShader != nullptr) {
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+index caae638..7dd94ae 100644
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -103,6 +103,23 @@ namespace RT64 {
+         std::vector<std::unique_ptr<BloomBuffers>> bloomBuffersRetired;
+         std::vector<std::unique_ptr<RenderTargetCopyDescriptorSet>> bloomDescriptorSets;
+         BloomBuffers *getBloomBuffers(RenderWorker *worker, uint32_t width, uint32_t height);
++
++        // Rush 2049 patch: glow. A mask like the scene's colour target (its size, format and multisampling), drawn with
++        // the scene's depth read-only, per scene target; old ones retired as the bloom buffers are.
++        struct GlowMask {
++            const RenderTexture *depthTexture = nullptr;
++            uint32_t width = 0;
++            uint32_t height = 0;
++            RenderFormat format = RenderFormat::UNKNOWN;
++            uint32_t sampleCount = 0;
++            std::unique_ptr<RenderTexture> texture;
++            std::unique_ptr<RenderTextureView> textureView;
++            std::unique_ptr<RenderFramebuffer> framebuffer;
++        };
++        std::vector<std::unique_ptr<GlowMask>> glowMasks;
++        std::vector<std::unique_ptr<GlowMask>> glowMasksRetired;
++        std::vector<std::unique_ptr<BloomGlowDescriptorSet>> glowDescriptorSets;
++        GlowMask *getGlowMask(RenderWorker *worker, const RenderTarget *colorTarget, const RenderTarget *depthTarget);
+         RenderDescriptorSet *makeBloomDescriptorSet(RenderWorker *worker, RenderTexture *texture, RenderTextureView *textureView);
+         std::unique_ptr<RenderTexture> dummyColorTarget;
+         std::unique_ptr<RenderTexture> dummyDepthTarget;
+diff --git a/src/render/rt64_framebuffer_renderer_call.h b/src/render/rt64_framebuffer_renderer_call.h
+index 1f87967..3f3c0df 100644
+--- a/src/render/rt64_framebuffer_renderer_call.h
++++ b/src/render/rt64_framebuffer_renderer_call.h
+@@ -43,6 +43,10 @@ namespace RT64 {
+                 bool vertexTestZ : 1;
+                 bool postBlendDitherNoise : 1;
+                 bool postBlendDitherNoiseNegative : 1;
++                // Rush 2049 patch: how much the draw glows, 0 for not (RT64::glowGain of the textures it samples), and
++                // the ubershader pipeline for its state, which its glow pipeline is made from (RasterShader::glowPipeline).
++                float glowGain;
++                const RenderPipeline *glowSourcePipeline;
+             } triangles;
+ 
+             struct {
+diff --git a/src/render/rt64_raster_shader.cpp b/src/render/rt64_raster_shader.cpp
+index e7a0578..6ecad42 100644
+--- a/src/render/rt64_raster_shader.cpp
++++ b/src/render/rt64_raster_shader.cpp
+@@ -4,6 +4,9 @@
+ 
+ #include "rt64_raster_shader.h"
+ 
++#include <mutex>
++#include <unordered_map>
++
+ #include "xxHash/xxh3.h"
+ 
+ #include "shaders/RenderParams.hlsli.rw.h"
+@@ -438,7 +441,38 @@ namespace RT64 {
+         return { vss.str(), pss.str() };
+     }
+     
++    // Rush 2049 patch: glow. The glow pipeline made beside each ubershader pipeline.
++    static std::mutex glowPipelineMutex;
++    static std::unordered_map<const RenderPipeline *, std::unique_ptr<RenderPipeline>> glowPipelines;
++
++    static std::unique_ptr<RenderPipeline> createPipelineDesc(const PipelineCreation &c, bool glow);
++
+     std::unique_ptr<RenderPipeline> RasterShader::createPipeline(const PipelineCreation &c) {
++        return createPipelineDesc(c, false);
++    }
++
++    void RasterShader::makeGlowPipeline(const RenderPipeline *pipeline, const PipelineCreation &c) {
++        if (pipeline == nullptr) {
++            return;
++        }
++
++        std::unique_ptr<RenderPipeline> glow = createPipelineDesc(c, true);
++        std::scoped_lock lock(glowPipelineMutex);
++        glowPipelines[pipeline] = std::move(glow);
++    }
++
++    const RenderPipeline *RasterShader::glowPipeline(const RenderPipeline *pipeline) {
++        std::scoped_lock lock(glowPipelineMutex);
++        auto it = glowPipelines.find(pipeline);
++        return (it != glowPipelines.end()) ? it->second.get() : nullptr;
++    }
++
++    void RasterShader::forgetPipeline(const RenderPipeline *pipeline) {
++        std::scoped_lock lock(glowPipelineMutex);
++        glowPipelines.erase(pipeline);
++    }
++
++    static std::unique_ptr<RenderPipeline> createPipelineDesc(const PipelineCreation &c, bool glow) {
+         RenderGraphicsPipelineDesc pipelineDesc;
+         pipelineDesc.renderTargetBlend[0] = RenderBlendDesc::Copy();
+         pipelineDesc.renderTargetFormat[0] = RenderTarget::colorBufferFormat(c.usesHDR);
+@@ -511,6 +545,13 @@ namespace RT64 {
+             pipelineDesc.stencilBackFace = stencilFace;
+         }
+ 
++        // Rush 2049 patch: glow. Drawn again after the scene, over its finished depth: where the draw is still the
++        // nearest surface its depth equals what it wrote, so the test is less or equal, and nothing is written to it.
++        if (glow) {
++            pipelineDesc.depthFunction = c.zCmp ? RenderComparisonFunction::LESS_EQUAL : RenderComparisonFunction::ALWAYS;
++            pipelineDesc.depthWriteEnabled = false;
++        }
++
+         return c.device->createGraphicsPipeline(pipelineDesc);
+     }
+     
+@@ -755,6 +796,11 @@ namespace RT64 {
+ 
+     RasterShaderUber::~RasterShaderUber() {
+         waitForPipelineCreation();
++
++        // Rush 2049 patch: glow.
++        for (const std::unique_ptr<RenderPipeline> &pipeline : pipelines) {
++            RasterShader::forgetPipeline(pipeline.get());
++        }
+     }
+ 
+     void RasterShaderUber::threadCreatePipelines(uint32_t threadIndex) {
+@@ -774,11 +820,13 @@ namespace RT64 {
+             if (pipelineIndex == 0) {
+                 firstPipelineMutex.lock();
+                 pipelines[pipelineIndex] = RasterShader::createPipeline(creation);
++                RasterShader::makeGlowPipeline(pipelines[pipelineIndex].get(), creation); // Rush 2049 patch: glow
+                 firstPipelineMutex.unlock();
+                 firstPipelineCondition.notify_all();
+             }
+             else {
+                 pipelines[pipelineIndex] = RasterShader::createPipeline(creation);
++                RasterShader::makeGlowPipeline(pipelines[pipelineIndex].get(), creation); // Rush 2049 patch: glow
+             }
+         }
+     }
+diff --git a/src/render/rt64_raster_shader.h b/src/render/rt64_raster_shader.h
+index c17d089..566604f 100644
+--- a/src/render/rt64_raster_shader.h
++++ b/src/render/rt64_raster_shader.h
+@@ -107,6 +107,15 @@ namespace RT64 {
+         static RasterShaderText generateShaderText(const ShaderDescription &desc, bool multisampling);
+         static std::unique_ptr<RenderPipeline> createPipeline(const PipelineCreation &c);
+         static RenderMultisampling generateMultisamplingPattern(uint32_t sampleCount, bool sampleLocationsSupported);
++
++        // Rush 2049 patch: glow (FramebufferRenderer::submitRasterScene). Beside each ubershader pipeline, the pipeline
++        // that draws a draw again into the glow mask: the same shaders and blend, no depth write, and a depth test the
++        // scene's depth passes where the draw is still in view (less or equal), or none if the draw had none. Made with
++        // the ubershader's pipelines, on their threads, since the ubershader lets its shaders go once they are made; an
++        // ubershader pipeline draws any draw. glowPipeline is null for a pipeline that has none.
++        static void makeGlowPipeline(const RenderPipeline *pipeline, const PipelineCreation &c);
++        static const RenderPipeline *glowPipeline(const RenderPipeline *pipeline);
++        static void forgetPipeline(const RenderPipeline *pipeline);
+     };
+ 
+     struct RasterShaderUber {
+diff --git a/src/render/rt64_shader_library.cpp b/src/render/rt64_shader_library.cpp
+index 0cbcaaa..3d1dbc7 100644
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -203,17 +203,23 @@
+ #   include "shaders/BloomExtractPSMS.hlsl.spirv.h"
+ #   include "shaders/BloomBlurPS.hlsl.spirv.h"
+ #   include "shaders/BloomCompositePS.hlsl.spirv.h"
++#   include "shaders/BloomGlowPS.hlsl.spirv.h"
++#   include "shaders/BloomGlowPSMS.hlsl.spirv.h"
+ #   if defined(_WIN32)
+ #       include "shaders/BloomExtractPS.hlsl.dxil.h"
+ #       include "shaders/BloomExtractPSMS.hlsl.dxil.h"
+ #       include "shaders/BloomBlurPS.hlsl.dxil.h"
+ #       include "shaders/BloomCompositePS.hlsl.dxil.h"
++#       include "shaders/BloomGlowPS.hlsl.dxil.h"
++#       include "shaders/BloomGlowPSMS.hlsl.dxil.h"
+ #   endif
+ #   if defined(__APPLE__)
+ #       include "shaders/BloomExtractPS.hlsl.metal.h"
+ #       include "shaders/BloomExtractPSMS.hlsl.metal.h"
+ #       include "shaders/BloomBlurPS.hlsl.metal.h"
+ #       include "shaders/BloomCompositePS.hlsl.metal.h"
++#       include "shaders/BloomGlowPS.hlsl.metal.h"
++#       include "shaders/BloomGlowPSMS.hlsl.metal.h"
+ #   endif
+ #   include "shared/rt64_bloom.h"
+ #endif
+@@ -1084,6 +1090,32 @@ namespace RT64 {
+             blend.dstBlendAlpha = RenderBlend::ONE;
+             blend.blendOpAlpha = RenderBlendOperation::ADD;
+             bloomComposite.pipeline = device->createGraphicsPipeline(pipelineDesc);
++
++            // Glow: the mask (with the scene to match against) added to a bloom buffer.
++            BloomGlowDescriptorSet glowDescriptorSet;
++            layoutBuilder.begin();
++            layoutBuilder.addPushConstant(0, 0, sizeof(interop::BloomCB), RenderShaderStageFlag::PIXEL);
++            layoutBuilder.addDescriptorSet(glowDescriptorSet);
++            layoutBuilder.end();
++            bloomGlow.pipelineLayout = layoutBuilder.create(device);
++
++            std::unique_ptr<RenderShader> glowShader = multisampled ?
++                device->createShader(CREATE_SHADER_INPUTS(BloomGlowPSMS, "PSMain", shaderFormat)) :
++                device->createShader(CREATE_SHADER_INPUTS(BloomGlowPS, "PSMain", shaderFormat));
++            RenderGraphicsPipelineDesc glowDesc;
++            glowDesc.pipelineLayout = bloomGlow.pipelineLayout.get();
++            glowDesc.renderTargetBlend[0] = RenderBlendDesc::Copy();
++            glowDesc.renderTargetBlend[0].blendEnabled = true;
++            glowDesc.renderTargetBlend[0].srcBlend = RenderBlend::ONE;
++            glowDesc.renderTargetBlend[0].dstBlend = RenderBlend::ONE;
++            glowDesc.renderTargetBlend[0].blendOp = RenderBlendOperation::ADD;
++            glowDesc.renderTargetFormat[0] = BloomBufferFormat;
++            glowDesc.renderTargetCount = 1;
++            glowDesc.cullMode = RenderCullMode::NONE;
++            glowDesc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
++            glowDesc.vertexShader = fullScreenVertexShader.get();
++            glowDesc.pixelShader = glowShader.get();
++            bloomGlow.pipeline = device->createGraphicsPipeline(glowDesc);
+         }
+ #   endif
+     }
+diff --git a/src/render/rt64_shader_library.h b/src/render/rt64_shader_library.h
+index b47daba..e1eb180 100644
+--- a/src/render/rt64_shader_library.h
++++ b/src/render/rt64_shader_library.h
+@@ -64,6 +64,7 @@ namespace RT64 {
+         ShaderRecord bloomExtract;
+         ShaderRecord bloomBlur;
+         ShaderRecord bloomComposite;
++        ShaderRecord bloomGlow; // its own layout: the glow mask and the scene (BloomGlowDescriptorSet)
+ 
+         ShaderLibrary(bool usesHDR, bool usesHardwareResolve);
+         ~ShaderLibrary();
+diff --git a/src/shaders/BloomPS.hlsl b/src/shaders/BloomPS.hlsl
+index 08f94be..9694af3 100644
+--- a/src/shaders/BloomPS.hlsl
++++ b/src/shaders/BloomPS.hlsl
+@@ -7,6 +7,8 @@
+ //                    brighter than the threshold (soft knee).
+ //   BLOOM_BLUR       bloom buffer -> bloom buffer: one direction of a separable gaussian.
+ //   BLOOM_COMPOSITE  bloom buffer -> scene colour: bilinear upscale, added with an additive blend.
++//   BLOOM_GLOW       glow mask -> bloom buffer, added after the extract: what the textures that glow drew, their bright
++//                    parts, at their gain (RT64::setGlowTextures).
+ // Adapted from the bloom of VibinToast's RT64 fork for Jet Force Gemini (github.com/VibinToast/rt64, branch jfg; MIT,
+ // Copyright (c) 2024 RT64 Contributors).
+ //
+@@ -15,7 +17,22 @@
+ 
+ [[vk::push_constant]] ConstantBuffer<BloomCB> gConstants : register(b0);
+ 
+-#if defined(BLOOM_EXTRACT) && defined(MULTISAMPLING)
++#if defined(BLOOM_GLOW)
++// The glow mask (gInput) and, to match against, the scene's colour (gScene); both at the scene's resolution.
++#   if defined(MULTISAMPLING)
++Texture2DMS<float4> gInput : register(t1);
++Texture2DMS<float4> gScene : register(t2);
++float3 loadInput(int2 p) { return gInput.Load(p, 0).rgb; }
++float3 loadScene(int2 p) { return gScene.Load(p, 0).rgb; }
++void inputSize(out uint w, out uint h) { uint s; gInput.GetDimensions(w, h, s); }
++#   else
++Texture2D<float4> gInput : register(t1);
++Texture2D<float4> gScene : register(t2);
++float3 loadInput(int2 p) { return gInput.Load(int3(p, 0)).rgb; }
++float3 loadScene(int2 p) { return gScene.Load(int3(p, 0)).rgb; }
++void inputSize(out uint w, out uint h) { gInput.GetDimensions(w, h); }
++#   endif
++#elif defined(BLOOM_EXTRACT) && defined(MULTISAMPLING)
+ Texture2DMS<float4> gInput : register(t1);
+ float3 loadInput(int2 p) { return gInput.Load(p, 0).rgb; }
+ void inputSize(out uint w, out uint h) { uint s; gInput.GetDimensions(w, h, s); }
+@@ -31,7 +48,31 @@ float4 PSMain(in float4 pos : SV_Position, in float2 uv : TEXCOORD0) : SV_TARGET
+     const int2 maxP = int2(width - 1, height - 1);
+     const int2 p = int2(pos.xy);
+ 
+-#if defined(BLOOM_EXTRACT)
++#if defined(BLOOM_GLOW)
++    // Glow: the mask's bright parts over the same block of pixels as the extract, times the gain (intensity), added
++    // to the bloom buffer: past the scene's white if the gain takes them there. With match (padding 1) a mask pixel
++    // counts only where the scene still shows it, for draws that had no depth test and so may since be covered.
++    const int scale = int(max(gConstants.scale, 1u));
++    const int2 base = p * scale;
++    float3 sum = float3(0.0f, 0.0f, 0.0f);
++    [unroll]
++    for (int y = 0; y < 4; y++) {
++        [unroll]
++        for (int x = 0; x < 4; x++) {
++            const int2 q = min(base + int2(((x * 2 + 1) * scale) / 8, ((y * 2 + 1) * scale) / 8), maxP);
++            const float3 glow = loadInput(q);
++            float weight = smoothstep(gConstants.threshold, gConstants.threshold + gConstants.knee, max(glow.r, max(glow.g, glow.b)));
++            if (gConstants.padding != 0) {
++                const float3 difference = abs(glow - loadScene(q));
++                weight *= 1.0f - saturate((max(difference.r, max(difference.g, difference.b)) - 0.02f) * 20.0f);
++            }
++
++            sum += glow * weight;
++        }
++    }
++
++    return float4(sum / 16.0f * gConstants.intensity, 1.0f);
++#elif defined(BLOOM_EXTRACT)
+     // Average a 4x4 grid spread over the block of source pixels this bloom pixel covers.
+     const int scale = int(max(gConstants.scale, 1u));
+     const int2 base = p * scale;

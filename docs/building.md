@@ -51,6 +51,7 @@ the process you started, from a DPI-aware process (`SetProcessDPIAware()` first,
 --musyx hle|native|lle|compare   audio path; native is the HLE without the 44.1 kHz mix
 --dump-audio <wav>           the game's mix before resampling (float); --dump-output <wav>: what the device gets
 --dump-dl <file> <seconds>   one frame's display list as text
+--dump-textures <dir>        every texture drawn, as RT64's debugger dumps them (named by RT64's hash)
 --dump-ram <prefix> <t1,..>  all of RDRAM at those times; diff two to find a setting's byte
 --watch <addr>               stacks on the first 6 changes of one RDRAM byte; --hwwatch <addr>: reads too
 --wwatch <addr>[:w]          the game functions that write those w bytes (default 4), logged every 5 s (Windows)

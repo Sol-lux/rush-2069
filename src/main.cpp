@@ -50,6 +50,11 @@
 #include "librecomp/game.hpp"
 #include "librecomp/mods.hpp"
 #include "librecomp/helpers.hpp"
+
+// runtime-patches/rt64-0015: --dump-textures.
+namespace RT64 {
+    void setTextureDumpDirectory(const char *path);
+}
 #include "librecomp/rsp.hpp"
 
 #include "common/rt64_gpu_timings.h"
@@ -763,6 +768,9 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "--dump-ram") == 0 && i + 2 < argc) {
             const char* prefix = argv[++i];
             rush2049::start_ram_dump(prefix, argv[++i]);
+        }
+        if (strcmp(argv[i], "--dump-textures") == 0 && i + 1 < argc) {
+            RT64::setTextureDumpDirectory(argv[++i]);
         }
         if (strcmp(argv[i], "--dump-dl") == 0 && i + 2 < argc) {
             const char* path = argv[++i];

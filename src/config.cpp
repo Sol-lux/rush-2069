@@ -24,6 +24,8 @@
 namespace RT64 {
     void setTranslucentSort(uint32_t minListDepth);
     void setBloom(float intensity, float threshold, float radius);
+    // rt64-0015: the textures that glow, by RT64's texture hash, each with a gain.
+    void setGlowTextures(const uint64_t *hashes, const float *gains, uint32_t count);
     void setPictureAdjust(float brightness, float contrast, float gamma);
     // rt64-0014: HDR output, read when the swap chain is made.
     void setHdrOutput(bool enabled, float paperWhiteNits, float peakNits, float highlights);
@@ -745,6 +747,32 @@ void rush2049::init_config() {
     on_apply(graphics, bloom_option, [](uint32_t value) {
         static constexpr float intensity[] = { 0.0f, 0.3f, 0.5f, 0.8f };
         RT64::setBloom(intensity[value], 0.7f, 6.0f);
+
+        // The textures that glow with bloom on: their draws are drawn again into a mask, and its bright parts glow
+        // whatever the threshold (rt64-0015). By RT64's texture hash (--dump-textures names each file by it), picked
+        // by eye in the attract race on Track 1: the sunset strip of the sky, the light strips of the arrow signs (one
+        // texture per stage of their chase; only the lit parts are bright enough to glow), the green arrow lights,
+        // the white light panel, the fire, and the white streaks of light.
+        struct Glow { uint64_t hash; float gain; };
+        static constexpr Glow glow[] = {
+            { 0xff7702143e532e89, 1.0f }, { 0x4c54eb90cd773e21, 1.0f }, { 0xa835fce4d0a61897, 1.0f }, // sky strip
+            { 0xf7939109599e735e, 1.0f }, { 0x040ea08fc05afc89, 1.0f }, { 0xa6fa1f8136a0ecf8, 1.0f },
+            { 0x9631d1419b3d8b35, 1.0f }, { 0x6c9fd965090dfdc7, 1.0f }, { 0x32725ed8645b3a19, 1.0f },
+            { 0x0cb4d09fa3aa5ab8, 1.0f },
+            { 0xdef7de9ed80039f1, 1.5f }, { 0x8fc1367a77baa62d, 1.5f }, { 0xd094d785decb2c3d, 1.5f }, // arrow signs
+            { 0x1cac697c8d17ff06, 1.5f }, // green arrow lights
+            { 0x2e4027f6b59b53a5, 1.5f }, // light panel
+            { 0x4f7db91da190b728, 1.5f }, // fire
+            { 0x45176efd102ac815, 1.0f }, // streaks of light
+        };
+        uint64_t hashes[std::size(glow)];
+        float gains[std::size(glow)];
+        for (size_t i = 0; i < std::size(glow); i++) {
+            hashes[i] = glow[i].hash;
+            gains[i] = glow[i].gain;
+        }
+
+        RT64::setGlowTextures(hashes, gains, value == (uint32_t)Bloom::Original ? 0 : uint32_t(std::size(glow)));
     });
 
     graphics.add_enum_option(

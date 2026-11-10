@@ -49,4 +49,8 @@ rt64-0013              the player's brightness, contrast and gamma (setPictureAd
                        picture after the VI's own gamma
 rt64-0014              HDR output (setHdrOutput): an scRGB swap chain, read at startup; the VI pass writes linear light
                        at a paper white with highlights lifted towards a peak; the 16-bit target turned on with it
+rt64-0015              glow (setGlowTextures): with bloom on, the draws that sample a listed texture are drawn again into
+                       a mask over the scene's depth (an ubershader pipeline's variant, less-or-equal, no depth write),
+                       and the mask's bright parts are added to the bloom at each texture's gain; setTextureDumpDirectory
+                       for --dump-textures
 ```

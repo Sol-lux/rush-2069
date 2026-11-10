@@ -717,6 +717,9 @@ int main(int argc, char** argv) {
             const char* prefix = argv[++i];
             rush2049::sync_dump(prefix, argv[++i]);
         }
+        if (strcmp(argv[i], "--frame-lock") == 0) {
+            rush2049::set_frame_lock(true);
+        }
         if (strcmp(argv[i], "--sync-hash") == 0 && i + 1 < argc) {
             rush2049::sync_hash(argv[++i]);
         }

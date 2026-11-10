@@ -59,3 +59,26 @@ extern "C" void rush2049_spin_yield(uint8_t* rdram) {
     Spinning spinning{ self };
     ultramodern::resume_thread_and_wait(PASS_RDRAM next);
 }
+
+// The same, but to one thread: the one the caller waits for, if it is ready, even while it waits here itself. The
+// frame lock (src/frame_lock.cpp) has threads 5 and 7 wait for each other this way; rush2049_spin_yield skips a
+// spinner, so the higher of the two (thread 5) kept the CPU and the other never ran. If that thread is not ready
+// (blocked in an OS call), it is rush2049_spin_yield.
+extern "C" void rush2049_yield_to(uint8_t* rdram, int32_t thread_id) {
+    PTR(OSThread) next_ = ultramodern::thread_queue_peek(PASS_RDRAM ultramodern::running_queue);
+    while (next_ != NULLPTR && TO_PTR(OSThread, next_)->id != thread_id) {
+        next_ = TO_PTR(OSThread, next_)->next;
+    }
+    if (next_ == NULLPTR) {
+        rush2049_spin_yield(rdram);
+        return;
+    }
+    ultramodern::thread_queue_remove(PASS_RDRAM ultramodern::running_queue, next_);
+    OSThread* next = TO_PTR(OSThread, next_);
+    next->queue = NULLPTR;
+    PTR(OSThread) self = ultramodern::this_thread();
+    ultramodern::thread_queue_insert(PASS_RDRAM ultramodern::running_queue, self);
+    TO_PTR(OSThread, self)->state = OSThreadState::QUEUED;
+    Spinning spinning{ self };
+    ultramodern::resume_thread_and_wait(PASS_RDRAM next);
+}

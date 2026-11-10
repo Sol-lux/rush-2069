@@ -47,8 +47,15 @@ round, in each mode, and when two different machines do.
 - [ ] A session mode that locks the frame loop to the tick: one frame of game logic for each tick, always in the
       same order, with the frame's time (`0x8002EB94`) fixed at 1/60 s. A machine that cannot keep 60 slows the
       game down; it never skips.
-- [ ] Find how the frame loop waits for a frame and where it takes its time from, and which of its work is logic
-      (changes the race) and which is only drawing.
+- [x] Find how the frame loop waits for a frame and where it takes its time from (`src/frame_lock.cpp`'s header).
+- [ ] Which of the frame loop's work is logic (changes the race) and which is only drawing.
+- [ ] The game's 60ths timer (`0x8002EB64`, the scheduler's retrace count) and the clock and countdown from it
+      follow the retraces even under `--frame-lock`; about twenty places read it.
+- [x] `--frame-lock` (`src/frame_lock.cpp`): one frame of the frame loop per step of thread 5, each 1/60 s. It
+      boots and holds 60 steps a second. Two locked boots into the attract race still differ from its first tick, and
+      the race starts on a different read (552 and 933), as unlocked boots do (513 and 791): the loads take machine
+      time, and the attract race follows the random state. So the test of the lock is a recording replayed, not two
+      boots.
 - [ ] Set the random state at the start of a match from a seed both sides share.
 - [ ] Find every caller of the random generator and sort them: those in drawing code (effects, sounds) must either
       run the same number of times on every machine or use a generator of their own.

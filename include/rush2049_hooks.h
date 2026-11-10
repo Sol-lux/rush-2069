@@ -111,6 +111,8 @@ gpr rush2049_scenery_mask(gpr mask, gpr offset);
 
 /* In busy-wait loops (us.toml): let the next ready game thread run, whatever its priority (src/spin_yield.cpp). */
 void rush2049_spin_yield(uint8_t* rdram);
+/* The same, to that game thread if it is ready (the frame lock, src/frame_lock.cpp). */
+void rush2049_yield_to(uint8_t* rdram, int32_t thread_id);
 
 /* Rewind (src/rewind.cpp): around each 60 Hz race tick in thread 5, and in the frame loop (thread 7) after its wait
    for a frame and before it draws a race frame. */

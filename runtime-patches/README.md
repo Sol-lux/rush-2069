@@ -38,4 +38,7 @@ rt64-0010              those see-through surfaces go in after the last other cal
                        a shallower call drawn after them (an effect, a Ghost Race's arrows) is still drawn after them
 rt64-0011              and among themselves picture by picture (a call's triangles that share corners), far to near by
                        each picture's farthest corner, a call drawn as one call per run of its pictures in that order
+rt64-0012              bloom (setBloom): before the HUD of each scene that draws the 3D world (the first draw without a
+                       depth test after 12 that write depth), the bright parts blurred and added back; adapted from
+                       VibinToast's RT64 fork for Jet Force Gemini (MIT); none on a WGSL build
 ```

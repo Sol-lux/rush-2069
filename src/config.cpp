@@ -19,9 +19,10 @@
 #include "ultramodern/ultramodern.hpp"
 
 // runtime-patches/rt64-0009: see-through surfaces drawn this many display lists deep go after the rest of their
-// view, 0 for none.
+// view, 0 for none. rt64-0012: bloom before the HUD, an intensity of 0 for none.
 namespace RT64 {
     void setTranslucentSort(uint32_t minListDepth);
+    void setBloom(float intensity, float threshold, float radius);
 }
 
 namespace {
@@ -197,6 +198,20 @@ namespace {
         {SeeThroughOrder::Sorted, "Sorted", "Sorted"},
     };
     const std::string see_through_order_option = "see_through_order";
+
+    enum class Bloom {
+        Original,
+        Low,
+        Medium,
+        High,
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> bloom_options = {
+        {Bloom::Original, "Original", "Original"},
+        {Bloom::Low, "Low", "Low"},
+        {Bloom::Medium, "Medium", "Medium"},
+        {Bloom::High, "High", "High"},
+    };
+    const std::string bloom_option = "bloom";
 
     // src/battle_tuning.cpp.
     enum class BattleMode {
@@ -660,6 +675,22 @@ void rush2049::init_config() {
     // Called on load too.
     on_apply(graphics, see_through_order_option, [](uint32_t value) {
         RT64::setTranslucentSort(value == (uint32_t)SeeThroughOrder::Sorted ? 2 : 0);
+    });
+
+    graphics.add_enum_option(
+        bloom_option,
+        "Bloom",
+        "A soft glow around the bright parts of the picture: the sky, lights, flames and shine on the cars. The HUD "
+        "doesn't glow."
+        "<br/>"
+        "<b>Original:</b> no glow, as the game shipped. <b>Low</b>, <b>Medium</b> and <b>High</b> add more of it.",
+        bloom_options,
+        Bloom::Original
+    );
+    // Called on load too. RT64's bloom (runtime-patches/rt64-0012-bloom.patch): intensity, threshold, blur radius.
+    on_apply(graphics, bloom_option, [](uint32_t value) {
+        static constexpr float intensity[] = { 0.0f, 0.3f, 0.5f, 0.8f };
+        RT64::setBloom(intensity[value], 0.7f, 6.0f);
     });
 
     graphics.add_enum_option(

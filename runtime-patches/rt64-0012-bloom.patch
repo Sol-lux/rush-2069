@@ -1,0 +1,507 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c01fb90..21fffea 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -813,6 +813,13 @@ build_vertex_shader( rt64 "src/shaders/Im3DVS.hlsl")
+ build_pixel_shader(  rt64 "src/shaders/ComposePS.hlsl")
+ build_pixel_shader(  rt64 "src/shaders/DebugPS.hlsl")
+ build_pixel_shader(  rt64 "src/shaders/Im3DPS.hlsl")
++# Rush 2049 patch: bloom (BloomPS.hlsl), desktop only.
++if (NOT RT64_WGSL)
++    build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomExtractPS.hlsl" "-D BLOOM_EXTRACT")
++    build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomExtractPSMS.hlsl" "-D BLOOM_EXTRACT" "-D MULTISAMPLING")
++    build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomBlurPS.hlsl" "-D BLOOM_BLUR")
++    build_pixel_shader(rt64 "src/shaders/BloomPS.hlsl" "src/shaders/BloomCompositePS.hlsl" "-D BLOOM_COMPOSITE")
++endif()
+ build_pixel_shader(  rt64 "src/shaders/PostProcessPS.hlsl")
+ 
+ target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/src)
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+index 421b829..4502c4a 100644
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -41,6 +41,20 @@ namespace RT64 {
+         translucentSortDepth.store(minListDepth, std::memory_order_relaxed);
+     }
+ 
++    static std::atomic<float> bloomIntensityValue{ 0.0f };
++    static std::atomic<float> bloomThresholdValue{ 0.7f };
++    static std::atomic<float> bloomRadiusValue{ 6.0f };
++
++    void setBloom(float intensity, float threshold, float radius) {
++        bloomIntensityValue.store(intensity, std::memory_order_relaxed);
++        bloomThresholdValue.store(threshold, std::memory_order_relaxed);
++        bloomRadiusValue.store(radius, std::memory_order_relaxed);
++    }
++
++    float bloomIntensity() { return bloomIntensityValue.load(std::memory_order_relaxed); }
++    float bloomThreshold() { return bloomThresholdValue.load(std::memory_order_relaxed); }
++    float bloomRadius() { return bloomRadiusValue.load(std::memory_order_relaxed); }
++
+     // Rush 2049 patch: a game that draws see-through surfaces (blended, Z compare without Z update) in among the rest of
+     // its scene leaves them to whatever is drawn after: on a console as here, a surface drawn later and farther away
+     // passes the depth test where the see-through one is and paints over it, since the see-through one wrote no depth.
+diff --git a/src/hle/rt64_state.h b/src/hle/rt64_state.h
+index 45010cb..97f0812 100644
+--- a/src/hle/rt64_state.h
++++ b/src/hle/rt64_state.h
+@@ -45,6 +45,13 @@ namespace RT64 {
+     // each workload.
+     void setTranslucentSort(uint32_t minListDepth);
+ 
++    // Rush 2049 patch: bloom on each scene that draws the 3D world, before its HUD (FramebufferRenderer::submitRasterScene);
++    // an intensity of 0 turns it off. Set by the game from its options.
++    void setBloom(float intensity, float threshold, float radius);
++    float bloomIntensity();
++    float bloomThreshold();
++    float bloomRadius();
++
+     struct State {
+         struct External {
+             Application *app;
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index bcb9367..0f32fca 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -11,6 +11,8 @@
+ #include "common/rt64_math.h"
+ #include "hle/rt64_color_converter.h"
+ #include "gbi/rt64_f3d.h"
++#include "hle/rt64_state.h"
++#include "shared/rt64_bloom.h"
+ #include "shared/rt64_framebuffer_params.h"
+ #include "shared/rt64_raster_params.h"
+ 
+@@ -174,6 +176,8 @@ namespace RT64 {
+     void FramebufferRenderer::resetFramebuffers(RenderWorker *worker, bool ubershadersVisible, float ditherNoiseStrength, const RenderMultisampling &multisampling) {
+         instanceDrawCallVector.clear();
+         hitGroupVector.clear();
++        bloomDescriptorSets.clear(); // Rush 2049 patch: the previous workload has finished on the GPU by now
++        bloomBuffersRetired.clear();
+         renderIndicesVector.clear();
+         rspSmoothNormalVector.clear();
+         frameParams.viewUbershaders = ubershadersVisible;
+@@ -563,7 +567,118 @@ namespace RT64 {
+             switchToGraphicsPipeline();
+         }
+         
+-        for (uint32_t i : rasterScene.instanceIndices) {
++        // Rush 2049 patch: bloom, once per scene that draws the 3D world, right before its HUD so the HUD does not glow.
++        // The HUD is the first draw without a depth test after at least BloomMinDepthWrites draws that write depth (the
++        // world); a scene without one gets it at its end. Adapted from VibinToast's RT64 fork for Jet Force Gemini
++        // (github.com/VibinToast/rt64, branch jfg; MIT, Copyright (c) 2024 RT64 Contributors).
++        const uint32_t sceneDrawCount = uint32_t(rasterScene.instanceIndices.size());
++        uint32_t bloomPosition = UINT32_MAX;
++        const float bloomIntensity = RT64::bloomIntensity();
++        if ((bloomIntensity > 0.0f) && (shaderLibrary->bloomComposite.pipeline != nullptr) && (fbStorage->colorTarget != nullptr) &&
++            (fbStorage->depthTarget != nullptr) && (fbStorage->colorWriteDepthRead != nullptr))
++        {
++            const uint32_t BloomMinDepthWrites = 12;
++            uint32_t depthWrites = 0;
++            uint32_t hudPosition = sceneDrawCount;
++            for (uint32_t pos = 0; pos < sceneDrawCount; pos++) {
++                const InstanceDrawCall &drawCall = instanceDrawCallVector[rasterScene.instanceIndices[pos]];
++                const bool isTriangles = (drawCall.type == InstanceDrawCall::Type::IndexedTriangles) ||
++                    (drawCall.type == InstanceDrawCall::Type::RawTriangles) || (drawCall.type == InstanceDrawCall::Type::RegularRect);
++                if (!isTriangles || drawCall.triangles.scissor.isEmpty()) {
++                    continue;
++                }
++
++                const interop::OtherMode otherMode = drawCall.triangles.shaderDesc.otherMode;
++                if (otherMode.zUpd()) {
++                    depthWrites++;
++                }
++                else if (!otherMode.zCmp() && (depthWrites >= BloomMinDepthWrites)) {
++                    hudPosition = pos;
++                    break;
++                }
++            }
++
++            if (depthWrites >= BloomMinDepthWrites) {
++                bloomPosition = hudPosition;
++            }
++        }
++
++        auto submitBloom = [&]() {
++            RenderTarget *colorTarget = fbStorage->colorTarget;
++            const uint32_t width = colorTarget->width;
++            const uint32_t height = colorTarget->height;
++            const uint32_t scale = std::max(1U, uint32_t(std::lround(height / 270.0)));
++            BloomBuffers *buffers = getBloomBuffers(worker, (width + scale - 1) / scale, (height + scale - 1) / scale);
++            if (buffers == nullptr) {
++                return;
++            }
++
++            interop::BloomCB cb = {};
++            cb.threshold = RT64::bloomThreshold();
++            cb.knee = 0.1f;
++            cb.intensity = bloomIntensity;
++            cb.sigma = RT64::bloomRadius();
++            cb.scale = scale;
++            RenderDescriptorSet *sceneSet = makeBloomDescriptorSet(worker, colorTarget->texture.get(), colorTarget->textureView.get());
++            RenderDescriptorSet *bufferSet[2] = {
++                makeBloomDescriptorSet(worker, buffers->texture[0].get(), buffers->textureView[0].get()),
++                makeBloomDescriptorSet(worker, buffers->texture[1].get(), buffers->textureView[1].get())
++            };
++
++            RenderPipelineLayout *bloomLayout = shaderLibrary->bloomExtract.pipelineLayout.get();
++            const RenderViewport smallViewport(0.0f, 0.0f, float(buffers->width), float(buffers->height));
++            const RenderRect smallRect(0, 0, int32_t(buffers->width), int32_t(buffers->height));
++            auto bloomPass = [&](const RenderPipeline *pipeline, RenderTexture *input, uint32_t output, RenderDescriptorSet *set) {
++                worker->commandList->barriers(RenderBarrierStage::GRAPHICS, {
++                    RenderTextureBarrier(input, RenderTextureLayout::SHADER_READ),
++                    RenderTextureBarrier(buffers->texture[output].get(), RenderTextureLayout::COLOR_WRITE)
++                });
++                worker->commandList->setFramebuffer(buffers->framebuffer[output].get());
++                worker->commandList->setPipeline(pipeline);
++                worker->commandList->setGraphicsPipelineLayout(bloomLayout);
++                worker->commandList->setGraphicsDescriptorSet(set, 0);
++                worker->commandList->setViewports(smallViewport);
++                worker->commandList->setScissors(smallRect);
++                worker->commandList->setGraphicsPushConstants(0, &cb);
++                worker->commandList->drawInstanced(3, 1, 0, 0);
++            };
++
++            // Bright parts of the scene, downsampled into buffer 0; blurred across into 1 and down back into 0.
++            bloomPass(shaderLibrary->bloomExtract.pipeline.get(), colorTarget->texture.get(), 0, sceneSet);
++            cb.directionX = 1; cb.directionY = 0;
++            bloomPass(shaderLibrary->bloomBlur.pipeline.get(), buffers->texture[0].get(), 1, bufferSet[0]);
++            cb.directionX = 0; cb.directionY = 1;
++            bloomPass(shaderLibrary->bloomBlur.pipeline.get(), buffers->texture[1].get(), 0, bufferSet[1]);
++
++            // Back to the scene target (depth read-only), the bloom added to it.
++            worker->commandList->barriers(RenderBarrierStage::GRAPHICS, {
++                RenderTextureBarrier(buffers->texture[0].get(), RenderTextureLayout::SHADER_READ),
++                RenderTextureBarrier(colorTarget->texture.get(), RenderTextureLayout::COLOR_WRITE)
++            });
++            worker->commandList->setFramebuffer(fbStorage->colorWriteDepthRead.get());
++            worker->commandList->setPipeline(shaderLibrary->bloomComposite.pipeline.get());
++            worker->commandList->setGraphicsPipelineLayout(bloomLayout);
++            worker->commandList->setGraphicsDescriptorSet(bufferSet[0], 0);
++            worker->commandList->setViewports(RenderViewport(0.0f, 0.0f, float(width), float(height)));
++            worker->commandList->setScissors(RenderRect(0, 0, int32_t(width), int32_t(height)));
++            worker->commandList->setGraphicsPushConstants(0, &cb);
++            worker->commandList->drawInstanced(3, 1, 0, 0);
++
++            // Everything the scene's draws expect, again.
++            switchToGraphicsPipeline();
++        };
++
++        for (uint32_t pos = 0; pos <= sceneDrawCount; pos++) {
++            if (pos == bloomPosition) {
++                switchToDepthRead();
++                submitBloom();
++            }
++
++            if (pos == sceneDrawCount) {
++                break;
++            }
++
++            const uint32_t i = rasterScene.instanceIndices[pos];
+             const InstanceDrawCall &drawCall = instanceDrawCallVector[i];
+             switch (drawCall.type) {
+             case InstanceDrawCall::Type::IndexedTriangles: 
+@@ -744,6 +859,50 @@ namespace RT64 {
+         }
+     }
+ 
++    FramebufferRenderer::BloomBuffers *FramebufferRenderer::getBloomBuffers(RenderWorker *worker, uint32_t width, uint32_t height) {
++        for (const std::unique_ptr<BloomBuffers> &buffers : bloomBuffers) {
++            if ((buffers->width == width) && (buffers->height == height)) {
++                return buffers.get();
++            }
++        }
++
++        // The window resized many times: the old sizes are retired, and freed once this workload has finished.
++        if (bloomBuffers.size() >= 4) {
++            for (std::unique_ptr<BloomBuffers> &buffers : bloomBuffers) {
++                bloomBuffersRetired.emplace_back(std::move(buffers));
++            }
++
++            bloomBuffers.clear();
++        }
++
++        std::unique_ptr<BloomBuffers> buffers = std::make_unique<BloomBuffers>();
++        buffers->width = width;
++        buffers->height = height;
++        const RenderFormat format = ShaderLibrary::BloomBufferFormat;
++        RenderClearValue clearValue = RenderClearValue::Color(RenderColor(), format);
++        for (uint32_t i = 0; i < 2; i++) {
++            buffers->texture[i] = worker->device->createTexture(RenderTextureDesc::ColorTarget(width, height, format, RenderMultisampling(), &clearValue));
++            if (buffers->texture[i] == nullptr) {
++                return nullptr;
++            }
++
++            buffers->texture[i]->setName("Bloom #" + std::to_string(i));
++            buffers->textureView[i] = buffers->texture[i]->createTextureView(RenderTextureViewDesc::Texture2D(format));
++            const RenderTexture *colorTexture = buffers->texture[i].get();
++            buffers->framebuffer[i] = worker->device->createFramebuffer(RenderFramebufferDesc(&colorTexture, 1));
++        }
++
++        bloomBuffers.emplace_back(std::move(buffers));
++        return bloomBuffers.back().get();
++    }
++
++    RenderDescriptorSet *FramebufferRenderer::makeBloomDescriptorSet(RenderWorker *worker, RenderTexture *texture, RenderTextureView *textureView) {
++        std::unique_ptr<RenderTargetCopyDescriptorSet> set = std::make_unique<RenderTargetCopyDescriptorSet>(worker->device);
++        set->setTexture(set->gInput, texture, RenderTextureLayout::SHADER_READ, textureView);
++        bloomDescriptorSets.emplace_back(std::move(set));
++        return bloomDescriptorSets.back()->get();
++    }
++
+     void FramebufferRenderer::updateMultisampling() {
+         dummyColorTargetView.reset();
+         dummyDepthTargetView.reset();
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+index 5ad545b..caae638 100644
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -89,6 +89,21 @@ namespace RT64 {
+         RenderPipeline *postBlendDitherNoiseSubNegativePipeline = nullptr;
+         std::unique_ptr<FramebufferRendererDescriptorCommonSet> descCommonSet;
+         std::unique_ptr<FramebufferRendererDescriptorTextureSet> descTextureSet;
++        // Rush 2049 patch: bloom. Two small buffers per bloom-buffer size (kept: sizes rarely change, and a buffer may still
++        // be in use by the command list being recorded), and the descriptor sets made while recording one workload, freed
++        // at the next (resetFramebuffers).
++        struct BloomBuffers {
++            uint32_t width = 0;
++            uint32_t height = 0;
++            std::unique_ptr<RenderTexture> texture[2];
++            std::unique_ptr<RenderTextureView> textureView[2];
++            std::unique_ptr<RenderFramebuffer> framebuffer[2];
++        };
++        std::vector<std::unique_ptr<BloomBuffers>> bloomBuffers;
++        std::vector<std::unique_ptr<BloomBuffers>> bloomBuffersRetired;
++        std::vector<std::unique_ptr<RenderTargetCopyDescriptorSet>> bloomDescriptorSets;
++        BloomBuffers *getBloomBuffers(RenderWorker *worker, uint32_t width, uint32_t height);
++        RenderDescriptorSet *makeBloomDescriptorSet(RenderWorker *worker, RenderTexture *texture, RenderTextureView *textureView);
+         std::unique_ptr<RenderTexture> dummyColorTarget;
+         std::unique_ptr<RenderTexture> dummyDepthTarget;
+         std::unique_ptr<RenderTextureView> dummyColorTargetView;
+diff --git a/src/render/rt64_shader_library.cpp b/src/render/rt64_shader_library.cpp
+index 469fafa..0cbcaaa 100644
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -197,6 +197,26 @@
+ #endif
+ 
+ #include "shared/rt64_fb_common.h"
++// Rush 2049 patch: bloom, desktop only.
++#if !defined(RT64_WGSL)
++#   include "shaders/BloomExtractPS.hlsl.spirv.h"
++#   include "shaders/BloomExtractPSMS.hlsl.spirv.h"
++#   include "shaders/BloomBlurPS.hlsl.spirv.h"
++#   include "shaders/BloomCompositePS.hlsl.spirv.h"
++#   if defined(_WIN32)
++#       include "shaders/BloomExtractPS.hlsl.dxil.h"
++#       include "shaders/BloomExtractPSMS.hlsl.dxil.h"
++#       include "shaders/BloomBlurPS.hlsl.dxil.h"
++#       include "shaders/BloomCompositePS.hlsl.dxil.h"
++#   endif
++#   if defined(__APPLE__)
++#       include "shaders/BloomExtractPS.hlsl.metal.h"
++#       include "shaders/BloomExtractPSMS.hlsl.metal.h"
++#       include "shaders/BloomBlurPS.hlsl.metal.h"
++#       include "shaders/BloomCompositePS.hlsl.metal.h"
++#   endif
++#   include "shared/rt64_bloom.h"
++#endif
+ #include "shared/rt64_fb_reinterpret.h"
+ #include "shared/rt64_texture_copy.h"
+ #include "shared/rt64_video_interface.h"
+@@ -1018,5 +1038,53 @@ namespace RT64 {
+             pipelineDesc.pixelShader = pixelShader.get();
+             textureResolve.pipeline = device->createGraphicsPipeline(pipelineDesc);
+         }
++
++#   if !defined(RT64_WGSL)
++        // Rush 2049 patch: bloom. Extract and blur write a bloom buffer; the composite adds it to the scene's colour target
++        // (with its read-only depth bound, as the scene's draws have it).
++        {
++            RenderTargetCopyDescriptorSet descriptorSet;
++            layoutBuilder.begin();
++            layoutBuilder.addPushConstant(0, 0, sizeof(interop::BloomCB), RenderShaderStageFlag::PIXEL);
++            layoutBuilder.addDescriptorSet(descriptorSet);
++            layoutBuilder.end();
++            bloomExtract.pipelineLayout = layoutBuilder.create(device);
++
++            const bool multisampled = (multisampling.sampleCount > 1);
++            std::unique_ptr<RenderShader> extractShader = multisampled ?
++                device->createShader(CREATE_SHADER_INPUTS(BloomExtractPSMS, "PSMain", shaderFormat)) :
++                device->createShader(CREATE_SHADER_INPUTS(BloomExtractPS, "PSMain", shaderFormat));
++            std::unique_ptr<RenderShader> blurShader = device->createShader(CREATE_SHADER_INPUTS(BloomBlurPS, "PSMain", shaderFormat));
++            std::unique_ptr<RenderShader> compositeShader = device->createShader(CREATE_SHADER_INPUTS(BloomCompositePS, "PSMain", shaderFormat));
++
++            RenderGraphicsPipelineDesc pipelineDesc;
++            pipelineDesc.pipelineLayout = bloomExtract.pipelineLayout.get();
++            pipelineDesc.renderTargetBlend[0] = RenderBlendDesc::Copy();
++            pipelineDesc.renderTargetFormat[0] = BloomBufferFormat;
++            pipelineDesc.renderTargetCount = 1;
++            pipelineDesc.cullMode = RenderCullMode::NONE;
++            pipelineDesc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
++            pipelineDesc.vertexShader = fullScreenVertexShader.get();
++            pipelineDesc.pixelShader = extractShader.get();
++            bloomExtract.pipeline = device->createGraphicsPipeline(pipelineDesc);
++
++            pipelineDesc.pixelShader = blurShader.get();
++            bloomBlur.pipeline = device->createGraphicsPipeline(pipelineDesc);
++
++            pipelineDesc.renderTargetFormat[0] = RenderTarget::colorBufferFormat(usesHDR);
++            pipelineDesc.depthTargetFormat = RenderTarget::depthBufferFormat();
++            pipelineDesc.multisampling = multisampling;
++            pipelineDesc.pixelShader = compositeShader.get();
++            RenderBlendDesc &blend = pipelineDesc.renderTargetBlend[0];
++            blend.blendEnabled = true;
++            blend.srcBlend = RenderBlend::ONE;
++            blend.dstBlend = RenderBlend::ONE;
++            blend.blendOp = RenderBlendOperation::ADD;
++            blend.srcBlendAlpha = RenderBlend::ZERO;
++            blend.dstBlendAlpha = RenderBlend::ONE;
++            blend.blendOpAlpha = RenderBlendOperation::ADD;
++            bloomComposite.pipeline = device->createGraphicsPipeline(pipelineDesc);
++        }
++#   endif
+     }
+ };
+diff --git a/src/render/rt64_shader_library.h b/src/render/rt64_shader_library.h
+index 641f3ec..b47daba 100644
+--- a/src/render/rt64_shader_library.h
++++ b/src/render/rt64_shader_library.h
+@@ -58,6 +58,13 @@ namespace RT64 {
+         ShaderRecord videoInterfaceNearest;
+         ShaderRecord videoInterfacePixel;
+ 
++        // Rush 2049 patch: bloom (BloomPS.hlsl), made with the multisampling shaders; the three share bloomExtract's
++        // layout. None on a WGSL build.
++        static const RenderFormat BloomBufferFormat = RenderFormat::R16G16B16A16_FLOAT;
++        ShaderRecord bloomExtract;
++        ShaderRecord bloomBlur;
++        ShaderRecord bloomComposite;
++
+         ShaderLibrary(bool usesHDR, bool usesHardwareResolve);
+         ~ShaderLibrary();
+         void setupCommonShaders(RenderInterface *rhi, RenderDevice *device);
+diff --git a/src/shaders/BloomPS.hlsl b/src/shaders/BloomPS.hlsl
+new file mode 100644
+index 0000000..08f94be
+--- /dev/null
++++ b/src/shaders/BloomPS.hlsl
+@@ -0,0 +1,84 @@
++//
++// RT64
++//
++// Rush 2049 patch: bloom. Three full-screen passes (FullScreenVS) run where the scene's 3D ends and its HUD begins, so
++// the HUD does not glow:
++//   BLOOM_EXTRACT    scene colour -> small bloom buffer: box-averaged down to about 270 lines, keeping only what is
++//                    brighter than the threshold (soft knee).
++//   BLOOM_BLUR       bloom buffer -> bloom buffer: one direction of a separable gaussian.
++//   BLOOM_COMPOSITE  bloom buffer -> scene colour: bilinear upscale, added with an additive blend.
++// Adapted from the bloom of VibinToast's RT64 fork for Jet Force Gemini (github.com/VibinToast/rt64, branch jfg; MIT,
++// Copyright (c) 2024 RT64 Contributors).
++//
++
++#include "shared/rt64_bloom.h"
++
++[[vk::push_constant]] ConstantBuffer<BloomCB> gConstants : register(b0);
++
++#if defined(BLOOM_EXTRACT) && defined(MULTISAMPLING)
++Texture2DMS<float4> gInput : register(t1);
++float3 loadInput(int2 p) { return gInput.Load(p, 0).rgb; }
++void inputSize(out uint w, out uint h) { uint s; gInput.GetDimensions(w, h, s); }
++#else
++Texture2D<float4> gInput : register(t1);
++float3 loadInput(int2 p) { return gInput.Load(int3(p, 0)).rgb; }
++void inputSize(out uint w, out uint h) { gInput.GetDimensions(w, h); }
++#endif
++
++float4 PSMain(in float4 pos : SV_Position, in float2 uv : TEXCOORD0) : SV_TARGET {
++    uint width, height;
++    inputSize(width, height);
++    const int2 maxP = int2(width - 1, height - 1);
++    const int2 p = int2(pos.xy);
++
++#if defined(BLOOM_EXTRACT)
++    // Average a 4x4 grid spread over the block of source pixels this bloom pixel covers.
++    const int scale = int(max(gConstants.scale, 1u));
++    const int2 base = p * scale;
++    float3 sum = float3(0.0f, 0.0f, 0.0f);
++    [unroll]
++    for (int y = 0; y < 4; y++) {
++        [unroll]
++        for (int x = 0; x < 4; x++) {
++            const int2 o = int2(((x * 2 + 1) * scale) / 8, ((y * 2 + 1) * scale) / 8);
++            sum += loadInput(min(base + o, maxP));
++        }
++    }
++
++    const float3 color = max(sum / 16.0f, 0.0f);
++    const float brightness = max(color.r, max(color.g, color.b));
++    const float knee = max(gConstants.knee, 1e-4f);
++    float soft = clamp(brightness - gConstants.threshold + knee, 0.0f, 2.0f * knee);
++    soft = (soft * soft) / (4.0f * knee);
++    const float contribution = max(soft, brightness - gConstants.threshold) / max(brightness, 1e-4f);
++    return float4(color * contribution, 1.0f);
++#elif defined(BLOOM_BLUR)
++    const float sigma = max(gConstants.sigma, 0.5f);
++    const int taps = int(ceil(sigma * 3.0f));
++    const int2 dir = int2(gConstants.directionX, gConstants.directionY);
++    const float k = -0.5f / (sigma * sigma);
++    float3 sum = loadInput(p);
++    float weightSum = 1.0f;
++    for (int i = 1; i <= taps; i++) {
++        const float w = exp(float(i * i) * k);
++        sum += (loadInput(clamp(p + dir * i, int2(0, 0), maxP)) + loadInput(clamp(p - dir * i, int2(0, 0), maxP))) * w;
++        weightSum += 2.0f * w;
++    }
++
++    return float4(sum / weightSum, 1.0f);
++#elif defined(BLOOM_COMPOSITE)
++    // Bilinear sample of the bloom buffer at this full-resolution pixel.
++    const float scale = float(max(gConstants.scale, 1u));
++    const float2 src = (pos.xy / scale) - 0.5f;
++    const int2 i0 = int2(floor(src));
++    const float2 f = src - float2(i0);
++    const float3 c00 = loadInput(clamp(i0, int2(0, 0), maxP));
++    const float3 c10 = loadInput(clamp(i0 + int2(1, 0), int2(0, 0), maxP));
++    const float3 c01 = loadInput(clamp(i0 + int2(0, 1), int2(0, 0), maxP));
++    const float3 c11 = loadInput(clamp(i0 + int2(1, 1), int2(0, 0), maxP));
++    const float3 bloom = lerp(lerp(c00, c10, f.x), lerp(c01, c11, f.x), f.y);
++    return float4(bloom * gConstants.intensity, 0.0f);
++#else
++    return float4(0.0f, 0.0f, 0.0f, 0.0f);
++#endif
++}
+diff --git a/src/shared/rt64_bloom.h b/src/shared/rt64_bloom.h
+new file mode 100644
+index 0000000..b14a396
+--- /dev/null
++++ b/src/shared/rt64_bloom.h
+@@ -0,0 +1,28 @@
++//
++// RT64
++//
++// Rush 2049 patch: the bloom passes' parameters (BloomPS.hlsl, FramebufferRenderer::submitRasterScene). Adapted from
++// the bloom of VibinToast's RT64 fork for Jet Force Gemini (github.com/VibinToast/rt64, branch jfg; MIT, Copyright (c)
++// 2024 RT64 Contributors).
++//
++
++#pragma once
++
++#include "shared/rt64_hlsl.h"
++
++#ifdef HLSL_CPU
++namespace interop {
++#endif
++    struct BloomCB {
++        float threshold;    // extract: brightness where bloom starts (0..1)
++        float knee;         // extract: width of the soft start above the threshold
++        float intensity;    // composite: amount added back
++        float sigma;        // blur: gaussian sigma in bloom-buffer pixels
++        uint scale;         // extract: full-resolution pixels per bloom-buffer pixel; composite: same
++        uint directionX;    // blur: 1 for the horizontal pass
++        uint directionY;    // blur: 1 for the vertical pass
++        uint padding;
++    };
++#ifdef HLSL_CPU
++};
++#endif

@@ -95,8 +95,24 @@ point for each.
 | Bloom | Done, run in a one-player race and 2-player Battle | Bright parts of the scene blurred and added back, once per frame before the HUD. The fork finds the HUD as the first draw without a depth test after at least 12 that write depth; if that splits a frame wrongly here, a marker at the scene's end (below) does it instead. Glow: textures picked by eye (RT64 texture hash, `src/config.cpp`: the sunset strip of the sky, the arrow signs' light strips, the green arrow lights, a light panel, the exhaust fire, light streaks) are drawn again into a mask after the scene, tested against its depth so only what is still in view counts (the sky, drawn with no depth test, only where the scene still shows it), and the mask's bright parts are added to the bloom at a gain, in the 16-bit float bloom buffer (`rt64-0015`). Run in the attract race on Track 1. Other tracks' textures and Battle's explosions are still to pick (`--dump-dl` + `--dump-ram` for a sheet, `--dump-textures` for the hashes). |
 | Brightness, contrast, gamma | Done, run | In the VI pass over the whole picture after the VI's own gamma, so at no measurable cost: brightness ±0.04 a step, contrast ±10% a step around mid grey, a gamma exponent of 1.25 to 0.8 (`rt64-0013`). |
 | HDR output | Done, run (scRGB swap chain made on D3D12; the look not yet judged on an HDR display) | An scRGB swap chain (R16G16B16A16_FLOAT, linear, 1.0 = 80 nits; `plume-0006`), read at startup. The VI pass turns the game's colours to linear light (gamma 2.2) with white at paper white, and lifts what is brighter than most of the picture (luminance above 0.5, cubed) towards the peak (`rt64-0014`); the 16-bit target is turned on with it against banding. The menus draw in 8-bit sRGB as before and are turned to linear at the same white where they reach the swap chain (`RecompFrontend-0009`). The scene target is still 0 to 1 (RT64's high precision is 16-bit unorm), so Bloom's glow, Glow's too, stops at white where it is added back: the bloom buffer could be added in the VI pass instead, past white, but that is after the HUD. |
-| Shadows | Planned | Contact shadows from the depth buffer toward the sun first, shadow maps from the frame's draws after. The cars' shadows as shipped are blob quads (texture `0x9807`). |
+| Shadows | Planned, next | In this order: (1) with Shadows on, the scenery off to the sides and behind the camera is sent too, so what stands outside the view can still cast into it (Scenery Culling at Off already sends the whole track's scenery from every stretch, but the game still skips what is behind the camera or off its sides; the GPU throws that away in the main view, so the picture is the same at the cost of the extra draws); (2) a sun per track, set by eye in a file: direction, how dark, the shadow's colour, starting from each view's brightest directional light (the game has no single sun, below); (3) in RT64, a depth pass from the sun of the scene's draws that write depth, before the scene; (4) the scene darkened where that map says it is in shadow, and the cars' blob shadows (texture `0x9807`) hidden; (5) a Graphics option, Original off. The cars first if the whole track costs too much: they are always near the camera, so their shadow map needs nothing more sent. Contact shadows traced through the depth buffer, and ray tracing, are fallbacks. |
 | Reflections | Planned | Screen-space reflections on chosen surfaces (the bay, glass, wet road). Chrome is already the game's own environment map. |
+
+### Picking textures that glow
+
+Glow's list is in `src/config.cpp` (the Bloom option), by RT64's texture hash. To add to it, for a track or a Battle
+arena:
+
+1. `--dump-dl <dl.txt> <t>` and `--dump-ram <prefix> <t>` together at the same second, where the textures are in view.
+2. `tools/texsheet.py sheet <dl.txt> <prefix>0.bin <sheet.png>`: a numbered sheet of every texture that frame draws.
+   The owner picks numbers by eye.
+3. `--dump-textures <dir>` for a run long enough to draw them, then `tools/texsheet.py match <sheet.png> <dir> <n>...`
+   for each number's hash: one difference far below the rest is the match (0 when exact).
+4. A line in the list with a gain: 1.0 for the sky's strip, 1.5 for lights and fire. Only the texture's bright parts
+   glow (above 0.35), so a strip whose lit cells change from texture to texture glows where it is lit.
+
+Left out so far: the coins (shiny, not lights: the owner's call) and a plain 4x4 white texture on Track 1, which
+would glow wherever it is used (to look at).
 
 ## What the game keeps where (lighting)
 

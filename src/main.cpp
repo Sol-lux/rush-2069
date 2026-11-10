@@ -778,6 +778,9 @@ int main(int argc, char** argv) {
                 rush2049::set_shadow_tuning(sun, false);
             }
         }
+        if (strcmp(argv[i], "--shadow-tuner") == 0) {
+            rush2049::start_shadow_tuner();
+        }
         if (strcmp(argv[i], "--shadow-debug") == 0) {
             rush2049::set_shadow_tuning(nullptr, true);
         }

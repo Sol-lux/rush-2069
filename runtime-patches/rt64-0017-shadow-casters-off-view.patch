@@ -1,0 +1,15 @@
+--- a/src/hle/rt64_rsp.cpp
++++ b/src/hle/rt64_rsp.cpp
+@@ -872,6 +872,12 @@
+             return;
+         }
+ 
++        // With shadows on, what lies off the view can still cast a shadow into it (a building behind the camera), so
++        // nothing is ended here: the shadow pass needs it, and the view still clips it.
++        if (RT64::shadowSettings().strength > 0.0f) {
++            return;
++        }
++
+         const UserConfiguration &userConfig = *state->ext.userConfig;
+         float aspect = 4.0f / 3.0f;
+         if (userConfig.aspectRatio == UserConfiguration::AspectRatio::Manual) {

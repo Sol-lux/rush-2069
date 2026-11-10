@@ -35,6 +35,9 @@ namespace rush2049 {
     // --memprobe: the memory-write probe overlay, F1 to show it (src/mem_probe.cpp).
     void start_mem_probe();
 
+    // --shadow-tuner: the overlay that sets Shadows' sun per track, Keypad 5 to show it (src/shadow_tuner.cpp).
+    void start_shadow_tuner();
+
     // RDRAM, once the scheduler has run; nullptr before that.
     uint8_t* probe_get_rdram();
 }

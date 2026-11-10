@@ -59,4 +59,6 @@ rt64-0016              shadows (setShadows): every vertex as an orthographic sun
                        depth test and write) drawn from the sun into a 4096 shadow map, then again over the scene, each
                        pixel whose depth is the draw's own multiplied by the shadow tint where the map covers it (4x4
                        taps); a debug view
+rt64-0017              with shadows on, G_CULLDL (rt64-0008) ends nothing, so what lies off the view (a building behind
+                       the camera) still reaches the shadow map; the view clips it as before
 ```

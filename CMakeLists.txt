@@ -216,6 +216,7 @@ target_sources(Rush2049Recompiled PRIVATE
     ${CMAKE_SOURCE_DIR}/src/controller_pak.cpp
     ${CMAKE_SOURCE_DIR}/src/debug_probe.cpp
     ${CMAKE_SOURCE_DIR}/src/mem_probe.cpp
+    ${CMAKE_SOURCE_DIR}/src/shadow_tuner.cpp
     ${CMAKE_SOURCE_DIR}/src/mem_search.cpp
     ${CMAKE_SOURCE_DIR}/src/dl_dump.cpp
     ${CMAKE_SOURCE_DIR}/src/frame_list.cpp

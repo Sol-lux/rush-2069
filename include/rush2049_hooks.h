@@ -113,6 +113,9 @@ void rush2049_rewind_tick_end(uint8_t* rdram);
 void rush2049_rewind_frame_begin(uint8_t* rdram);
 void rush2049_rewind_frame_draw(uint8_t* rdram, recomp_context* ctx);
 
+/* The sync probe (src/sync_probe.cpp): after thread 5 reads the controllers, the four OSContPads it read. */
+void rush2049_sync_pads(uint8_t* rdram, gpr pads_addr);
+
 /* Save Ghosts (src/controller_pak.cpp): at the end of a Ghost Race, before the game checks whether to offer
    SAVE GHOST. */
 void rush2049_ghost_save_check(uint8_t* rdram);

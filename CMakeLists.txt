@@ -226,6 +226,7 @@ target_sources(Rush2049Recompiled PRIVATE
     ${CMAKE_SOURCE_DIR}/src/battle_tuning_mod.cpp
     ${CMAKE_SOURCE_DIR}/src/hires_font.cpp
     ${CMAKE_SOURCE_DIR}/src/rewind.cpp
+    ${CMAKE_SOURCE_DIR}/src/sync_probe.cpp
     ${CMAKE_SOURCE_DIR}/src/music_thread.cpp
     ${CMAKE_SOURCE_DIR}/src/audio_resampler.cpp
     ${CMAKE_SOURCE_DIR}/src/audio_limiter.cpp

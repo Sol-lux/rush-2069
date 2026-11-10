@@ -47,6 +47,16 @@ namespace rush2049 {
     bool scripted_rewind();
     // Rewind (src/rewind.cpp): the General tab's Rewind option.
     void set_rewind(bool enabled);
+    // The race's memory, as offsets into RDRAM: what Rewind saves (src/rewind.cpp).
+    struct MemoryRange {
+        uint32_t lo, hi;
+    };
+    const std::vector<MemoryRange>& race_memory();
+    // The sync probe (src/sync_probe.cpp): --sync-record, --sync-replay, --sync-hash and --sync-dump.
+    void sync_record(const char* path);
+    void sync_replay(const char* path);
+    void sync_hash(const char* path);
+    void sync_dump(const char* prefix, const char* reads);
     // Whether the last frame the game drew was split screen (src/widescreen.cpp).
     bool split_screen();
 

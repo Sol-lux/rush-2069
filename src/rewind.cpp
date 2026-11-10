@@ -121,7 +121,7 @@ constexpr Range not_saved[] = {
 
 std::atomic<bool> enabled{ true };
 bool tick_running = false;     // thread 5 is inside a tick
-std::vector<Range> saved;      // what is saved, as offsets into RDRAM
+std::vector<rush2049::MemoryRange> saved;  // what is saved, as offsets into RDRAM
 std::vector<uint8_t> shadow;   // the saved memory as of the last frame saved, indexed like RDRAM
 bool have_shadow = false;
 uint32_t shadow_sounds = 0;    // the sound count as of the shadow
@@ -145,6 +145,21 @@ struct Spared {
     std::chrono::steady_clock::time_point since;
 };
 std::vector<Spared> spared;    // lost sounds left to play out (see release_lost_sounds)
+
+// What is saved: everything from saved_lo to saved_hi but not_saved.
+void build_saved() {
+    if (!saved.empty()) {
+        return;
+    }
+    uint32_t lo = saved_lo;
+    for (Range r : not_saved) {
+        saved.push_back({ lo - 0x80000000u, r.lo - 0x80000000u });
+        lo = r.hi;
+    }
+    if (lo < saved_hi) {
+        saved.push_back({ lo - 0x80000000u, saved_hi - 0x80000000u });
+    }
+}
 
 uint32_t read_word(const uint8_t* mem, uint32_t addr) {
     return *(const uint32_t*)(mem + (addr - 0x80000000u));
@@ -211,7 +226,7 @@ bool same(const uint8_t* a, const uint8_t* b, uint32_t n) {
 template <typename F>
 void for_each_change(const uint8_t* rdram, F f) {
     constexpr uint32_t block = 4096, piece = 64;
-    for (Range r : saved) {
+    for (rush2049::MemoryRange r : saved) {
         for (uint32_t p = r.lo; p < r.hi;) {
             uint32_t end = std::min(p + block, r.hi);
             if (same(rdram + p, shadow.data() + p, end - p)) {
@@ -535,6 +550,11 @@ int restore_held_sounds(uint8_t* rdram, recomp_context* ctx, const std::vector<u
 
 }
 
+const std::vector<rush2049::MemoryRange>& rush2049::race_memory() {
+    build_saved();
+    return saved;
+}
+
 void rush2049::set_rewind(bool on) {
     enabled = on;
 }
@@ -567,18 +587,9 @@ extern "C" void rush2049_rewind_frame_draw(uint8_t* rdram, recomp_context* ctx) 
         return;
     }
     if (!have_shadow) {
-        if (saved.empty()) {
-            uint32_t lo = saved_lo;
-            for (Range r : not_saved) {
-                saved.push_back({ lo - 0x80000000u, r.lo - 0x80000000u });
-                lo = r.hi;
-            }
-            if (lo < saved_hi) {
-                saved.push_back({ lo - 0x80000000u, saved_hi - 0x80000000u });
-            }
-            shadow.resize(saved_hi - 0x80000000u);
-        }
-        for (Range r : saved) {
+        build_saved();
+        shadow.resize(saved_hi - 0x80000000u);
+        for (rush2049::MemoryRange r : saved) {
             memcpy(shadow.data() + r.lo, rdram + r.lo, r.hi - r.lo);
         }
         shadow_sounds = read_word(rdram, sound_count_addr);

@@ -707,6 +707,19 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
             load_input_script(argv[++i]);
         }
+        if (strcmp(argv[i], "--sync-record") == 0 && i + 1 < argc) {
+            rush2049::sync_record(argv[++i]);
+        }
+        if (strcmp(argv[i], "--sync-replay") == 0 && i + 1 < argc) {
+            rush2049::sync_replay(argv[++i]);
+        }
+        if (strcmp(argv[i], "--sync-dump") == 0 && i + 2 < argc) {
+            const char* prefix = argv[++i];
+            rush2049::sync_dump(prefix, argv[++i]);
+        }
+        if (strcmp(argv[i], "--sync-hash") == 0 && i + 1 < argc) {
+            rush2049::sync_hash(argv[++i]);
+        }
         if (strcmp(argv[i], "--park") == 0) {
             park_players = true;
         }

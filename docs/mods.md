@@ -92,7 +92,8 @@ point for each.
 
 | Enhancement | Status | Approach |
 |---|---|---|
-| Bloom | Done, run in a one-player race; split screen to check | Bright parts of the scene blurred and added back, once per frame before the HUD. The fork finds the HUD as the first draw without a depth test after at least 12 that write depth; if that splits a frame wrongly here, a marker at the scene's end (below) does it instead. |
+| Bloom | Done, run in a one-player race and 2-player Battle | Bright parts of the scene blurred and added back, once per frame before the HUD. The fork finds the HUD as the first draw without a depth test after at least 12 that write depth; if that splits a frame wrongly here, a marker at the scene's end (below) does it instead. |
+| Brightness, contrast, gamma | Done, run | In the VI pass over the whole picture after the VI's own gamma, so at no measurable cost: brightness ±0.04 a step, contrast ±10% a step around mid grey, a gamma exponent of 1.25 to 0.8 (`rt64-0013`). |
 | HDR output | Planned | An HDR swapchain and a float scene target; the game's colours stop at white, so the draws that glow (flames, explosions, neon) are picked out. RT64's "HDR" setting is precision only. |
 | Shadows | Planned | Contact shadows from the depth buffer toward the sun first, shadow maps from the frame's draws after. The cars' shadows as shipped are blob quads (texture `0x9807`). |
 | Reflections | Planned | Screen-space reflections on chosen surfaces (the bay, glass, wet road). Chrome is already the game's own environment map. |

@@ -19,10 +19,12 @@
 #include "ultramodern/ultramodern.hpp"
 
 // runtime-patches/rt64-0009: see-through surfaces drawn this many display lists deep go after the rest of their
-// view, 0 for none. rt64-0012: bloom before the HUD, an intensity of 0 for none.
+// view, 0 for none. rt64-0012: bloom before the HUD, an intensity of 0 for none. rt64-0013: brightness, contrast and
+// gamma over the whole picture.
 namespace RT64 {
     void setTranslucentSort(uint32_t minListDepth);
     void setBloom(float intensity, float threshold, float radius);
+    void setPictureAdjust(float brightness, float contrast, float gamma);
 }
 
 namespace {
@@ -212,6 +214,30 @@ namespace {
         {Bloom::High, "High", "High"},
     };
     const std::string bloom_option = "bloom";
+
+    // Brightness, Contrast and Gamma: five steps each, Original in the middle (index 2).
+    const std::vector<recomp::config::ConfigOptionEnumOption> brightness_options = {
+        {0, "Darker2", "Darker 2"}, {1, "Darker", "Darker"}, {2, "Original", "Original"},
+        {3, "Brighter", "Brighter"}, {4, "Brighter2", "Brighter 2"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> contrast_options = {
+        {0, "Lower2", "Lower 2"}, {1, "Lower", "Lower"}, {2, "Original", "Original"},
+        {3, "Higher", "Higher"}, {4, "Higher2", "Higher 2"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> gamma_options = {
+        {0, "Darker2", "Darker 2"}, {1, "Darker", "Darker"}, {2, "Original", "Original"},
+        {3, "Brighter", "Brighter"}, {4, "Brighter2", "Brighter 2"},
+    };
+    const std::string brightness_option = "brightness";
+    const std::string contrast_option = "contrast";
+    const std::string gamma_option = "gamma";
+    uint32_t picture_brightness = 2, picture_contrast = 2, picture_gamma = 2;
+    void apply_picture() {
+        static constexpr float brightness[] = { -0.08f, -0.04f, 0.0f, 0.04f, 0.08f };
+        static constexpr float contrast[] = { 0.8f, 0.9f, 1.0f, 1.1f, 1.2f };
+        static constexpr float gamma[] = { 1.25f, 1.12f, 1.0f, 0.89f, 0.8f };
+        RT64::setPictureAdjust(brightness[picture_brightness], contrast[picture_contrast], gamma[picture_gamma]);
+    }
 
     // src/battle_tuning.cpp.
     enum class BattleMode {
@@ -692,6 +718,36 @@ void rush2049::init_config() {
         static constexpr float intensity[] = { 0.0f, 0.3f, 0.5f, 0.8f };
         RT64::setBloom(intensity[value], 0.7f, 6.0f);
     });
+
+    graphics.add_enum_option(
+        brightness_option,
+        "Brightness",
+        "Lighter or darker over the whole picture, the HUD too. <b>Original:</b> as the game shipped.",
+        brightness_options,
+        2
+    );
+    // Called on load too. RT64's VI pass (runtime-patches/rt64-0013-picture-adjust.patch).
+    on_apply(graphics, brightness_option, [](uint32_t value) { picture_brightness = std::min(value, 4u); apply_picture(); });
+
+    graphics.add_enum_option(
+        contrast_option,
+        "Contrast",
+        "More or less difference between the dark and light parts of the picture, the HUD too. <b>Original:</b> as "
+        "the game shipped.",
+        contrast_options,
+        2
+    );
+    on_apply(graphics, contrast_option, [](uint32_t value) { picture_contrast = std::min(value, 4u); apply_picture(); });
+
+    graphics.add_enum_option(
+        gamma_option,
+        "Gamma",
+        "Lighter or darker mid-tones, keeping black black and white white, the HUD too. <b>Original:</b> as the game "
+        "shipped.",
+        gamma_options,
+        2
+    );
+    on_apply(graphics, gamma_option, [](uint32_t value) { picture_gamma = std::min(value, 4u); apply_picture(); });
 
     graphics.add_enum_option(
         ghost_arrows_option,

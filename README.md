@@ -70,6 +70,7 @@ option has an Original value that runs the game as it shipped.
   it.
 - **Bloom**: a soft glow around the bright parts of the picture (the sky, lights, flames, shine on the cars), at Low,
   Medium or High. The HUD doesn't glow. Off as the game shipped.
+- **Brightness, contrast and gamma**: five steps each, over the whole picture, the HUD too.
 - **Enhanced audio**: MusyX music and sound effects are mixed at 44.1 kHz with a better interpolator instead of the
   game's 22.05 kHz mix, loud peaks are softly limited instead of clipping, and playback no longer skips or drops
   out when the audio output falls behind.
@@ -130,6 +131,9 @@ shipped, set every Original value:
 | See-through scenery in order | See-Through Order | `graphics.json` `see_through_order` | `"Sorted"` | `"Original"` |
 | Whole ghost arrows | Ghost Arrows | `graphics.json` `ghost_arrows` | `"Whole"` | `"Original"` |
 | Bloom | Bloom | `graphics.json` `bloom` | `"Original"` (`"Low"`, `"Medium"`, `"High"`) | `"Original"` |
+| Brightness | Brightness | `graphics.json` `brightness` | `"Original"` (`"Darker2"`, `"Darker"`, `"Brighter"`, `"Brighter2"`) | `"Original"` |
+| Contrast | Contrast | `graphics.json` `contrast` | `"Original"` (`"Lower2"`, `"Lower"`, `"Higher"`, `"Higher2"`) | `"Original"` |
+| Gamma | Gamma | `graphics.json` `gamma` | `"Original"` (`"Darker2"`, `"Darker"`, `"Brighter"`, `"Brighter2"`) | `"Original"` |
 | Rendering resolution | Resolution | `graphics.json` `res_option` | `"Auto"` (window size) | `"Original"` (320×240) |
 | Anti-aliasing | MS Anti-Aliasing | `graphics.json` `msaa_option` | `"MSAA2X"` | `"None"` |
 | Hi-res menu and HUD text | Hi-res Font | `graphics.json` `hires_font` | `"On"` | `"Off"` |

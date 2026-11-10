@@ -41,4 +41,6 @@ rt64-0011              and among themselves picture by picture (a call's triangl
 rt64-0012              bloom (setBloom): before the HUD of each scene that draws the 3D world (the first draw without a
                        depth test after 12 that write depth), the bright parts blurred and added back; adapted from
                        VibinToast's RT64 fork for Jet Force Gemini (MIT); none on a WGSL build
+rt64-0013              the player's brightness, contrast and gamma (setPictureAdjust), in the VI pass over the whole
+                       picture after the VI's own gamma
 ```

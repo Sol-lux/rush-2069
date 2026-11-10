@@ -78,6 +78,8 @@ namespace rush2049 {
     void set_scenery_culling(float reach);
     // Shadows' developer flags (src/config.cpp): the sun's direction (null to keep it) and the debug view (once on, on).
     void set_shadow_tuning(const float *sun_direction, bool debug_view);
+    // Shadows only while a track is loaded, none in the menus (src/config.cpp).
+    void start_shadow_gate();
     // Ghost Arrows (src/ghost_arrows.cpp): whether the ghosts' arrows are drawn after the scenery, each whole or not at
     // all by whether its tip can be seen (Whole), rather than amid it and covered pixel by pixel (Original).
     void set_ghost_arrows_whole(bool on);

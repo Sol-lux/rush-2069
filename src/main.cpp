@@ -684,6 +684,7 @@ int main(int argc, char** argv) {
     }
 #endif
 
+    rush2049::start_shadow_gate();
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--boot") == 0) {
             autoboot = true;

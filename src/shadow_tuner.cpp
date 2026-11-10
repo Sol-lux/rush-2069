@@ -1,7 +1,8 @@
 // --shadow-tuner: set Shadows' sun for each track by eye, with the game running. An overlay (Keypad 5 shows and hides
-// it) shows the sun as two angles fixed to the track's world: its compass direction (azimuth, 0-360 degrees, from the
-// world's +z axis towards +x) and its height above the horizon (elevation, 0-90). Keypad 4 and 6 turn it round (5
-// degrees a press, held to repeat), 8 and 2 raise and lower it (2 degrees), and the shadows move as it changes.
+// it, or Insert) shows the sun as two angles fixed to the track's world: its compass direction (azimuth, 0-360 degrees,
+// from the world's +z axis towards +x) and its height above the horizon (elevation, 0-90). Keypad 4 and 6 (or Home and
+// End) turn it round (5 degrees a press, held to repeat), 8 and 2 (Page Up and Page Down) raise and lower it (2
+// degrees), and the shadows move as it changes.
 // Players never see it: it exists only with the flag.
 //
 // Each track is known by a hash of its scenery boxes (the list at 0x80149B80 that Scenery Culling walks,
@@ -53,15 +54,16 @@ int SDLCALL key_watch(void*, SDL_Event* event) {
     Cmd cmd;
     switch (event->key.keysym.scancode) {
         case SDL_SCANCODE_KP_5:
+        case SDL_SCANCODE_INSERT:
             if (event->key.repeat) {
                 return 0;
             }
             cmd = Cmd::Toggle;
             break;
-        case SDL_SCANCODE_KP_4: cmd = Cmd::Left; break;
-        case SDL_SCANCODE_KP_6: cmd = Cmd::Right; break;
-        case SDL_SCANCODE_KP_8: cmd = Cmd::Up; break;
-        case SDL_SCANCODE_KP_2: cmd = Cmd::Down; break;
+        case SDL_SCANCODE_KP_4: case SDL_SCANCODE_HOME: cmd = Cmd::Left; break;
+        case SDL_SCANCODE_KP_6: case SDL_SCANCODE_END: cmd = Cmd::Right; break;
+        case SDL_SCANCODE_KP_8: case SDL_SCANCODE_PAGEUP: cmd = Cmd::Up; break;
+        case SDL_SCANCODE_KP_2: case SDL_SCANCODE_PAGEDOWN: cmd = Cmd::Down; break;
         default: return 0;
     }
     std::lock_guard lock{ cmd_mutex };
@@ -148,7 +150,7 @@ void tuner_thread() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     SDL_AddEventWatch(key_watch, nullptr);
-    fprintf(stderr, "[shadow tuner] ready: Keypad 5 shows it\n");
+    fprintf(stderr, "[shadow tuner] ready: Insert (or Keypad 5) shows it\n");
 
     std::map<uint32_t, Sun> suns = load();
     uint32_t key = 0;
@@ -232,9 +234,9 @@ void tuner_thread() {
             else {
                 snprintf(text, sizeof(text),
                          "Shadow sun, track %08X%s\n\n"
-                         "Azimuth   %3.0f  %s   Keypad 4 / 6\n"
-                         "Elevation %3.0f  %s   Keypad 2 / 8\n\n"
-                         "Saved to %s as it changes. Keypad 5 hides this.",
+                         "Azimuth   %3.0f  %s   Home / End\n"
+                         "Elevation %3.0f  %s   Page Down / Page Up\n\n"
+                         "Saved to %s as it changes. Insert hides this.",
                          key, suns.count(key) ? "" : " (default)", sun.azimuth, bar(sun.azimuth, 360.0f).c_str(),
                          sun.elevation, bar(sun.elevation, 90.0f).c_str(), suns_path);
             }

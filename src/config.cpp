@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <atomic>
 #include <filesystem>
+#include <chrono>
+#include <thread>
 
+#include "debug_probe.h"
 #include "rush2049_game.h"
 #include "rush2049_hooks.h"
 #include "musyx_hle.h"
@@ -263,10 +266,13 @@ namespace {
     uint32_t shadows_level = 0;
     float shadows_sun[3] = { 0.3f, -1.0f, 0.2f };
     bool shadows_debug = false;
+    // Whether a track is loaded (rush2049::start_shadow_gate): the menus draw 3D models too (the spinning coin, the
+    // items behind the text while they animate), which must cast nothing.
+    std::atomic<bool> shadows_in_track{ false };
     void apply_shadows() {
         static constexpr float strength[] = { 0.0f, 0.5f, 0.8f };
         RT64::ShadowSettings settings;
-        settings.strength = strength[shadows_level];
+        settings.strength = shadows_in_track.load() ? strength[shadows_level] : 0.0f;
         for (int i = 0; i < 3; i++) {
             settings.direction[i] = shadows_sun[i];
         }
@@ -424,6 +430,26 @@ void rush2049::set_shadow_tuning(const float *sun_direction, bool debug_view) {
 
     shadows_debug = shadows_debug || debug_view;
     apply_shadows();
+}
+
+// Shadows only while a track is loaded: the list of scenery boxes Scenery Culling walks (the pointer at 0x80149B80,
+// src/draw_distance.cpp) is set for a track and cleared in the menus, so it is checked ten times a second.
+void rush2049::start_shadow_gate() {
+    std::thread([]() {
+        uint8_t* rdram;
+        while ((rdram = rush2049::probe_get_rdram()) == nullptr) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        while (true) {
+            uint32_t boxes = *reinterpret_cast<const uint32_t*>(rdram + (0x80149B80 - 0x80000000));
+            bool in_track = boxes >= 0x80000000 && boxes < 0x80800000;
+            if (in_track != shadows_in_track.load()) {
+                shadows_in_track = in_track;
+                apply_shadows();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }).detach();
 }
 
 static Accessory accessory() {

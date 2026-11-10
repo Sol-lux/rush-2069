@@ -53,7 +53,7 @@ the process you started, from a DPI-aware process (`SetProcessDPIAware()` first,
 --dump-dl <file> <seconds>   one frame's display list as text
 --dump-textures <dir>        every texture drawn, as RT64's debugger dumps them (named by RT64's hash)
 --shadow-sun <x,y,z>         Shadows' sun: the way its light travels in the game's world (y up; default 0.3,-1,0.2)
---shadow-tuner               Shadows' sun per track by eye: Keypad 5 shows it, 4/6 turn the sun, 8/2 raise and lower it
+--shadow-tuner               Shadows' sun per track by eye: Insert shows it, Home/End turn the sun, Page Up/Down raise it
                              (src/shadow_tuner.cpp; saved to shadow_suns.txt)
 --shadow-debug               Shadows' debug view: in shadow red, lit green, outside the shadow map blue
 --dump-ram <prefix> <t1,..>  all of RDRAM at those times; diff two to find a setting's byte

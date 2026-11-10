@@ -73,4 +73,6 @@ rt64-0021              shadows: the depth pass from the sun clamps rather than c
                        top, nearer the sun than the map's near end, keeps casting as the box moves; the receive pass's
                        own-depth tolerances grow with fwidth of the depth, so a road seen at a grazing angle keeps its
                        shadow at any view angle
+rt64-0022              shadows: a mirrored draw (the water's reflection; modelview times projection flips
+                       handedness) neither casts nor takes shadows
 ```

@@ -1,0 +1,21 @@
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1244,7 +1244,17 @@
+             const uint32_t worldIndex = drawData.worldIndices[v];
+             const uint32_t viewIndex = drawData.viewProjIndices[v];
+             hlslpp::float3 sunPos(2.0f, 2.0f, 2.0f); // outside the map
+-            if ((worldIndex < drawData.worldTransforms.size()) && (viewIndex < centers.size())) {
++            // A mirrored draw (the water's reflection of the scene) neither casts nor takes: its vertices stay outside
++            // the map. Its modelview times projection flips handedness; the game's view and projection have a positive
++            // determinant (measured: the opposite test removed every shadow), so a draw whose product is negative is mirrored.
++            bool mirrored = false;
++            if ((worldIndex < drawData.worldTransforms.size()) && (viewIndex < drawData.viewProjTransforms.size())) {
++                const hlslpp::float4x4 wm = drawData.worldTransforms[worldIndex];
++                const hlslpp::float3x3 w3(wm[0].xyz, wm[1].xyz, wm[2].xyz);
++                mirrored = (float(hlslpp::determinant(w3)) * float(hlslpp::determinant(drawData.viewProjTransforms[viewIndex]))) < 0.0f;
++            }
++
++            if (!mirrored && (worldIndex < drawData.worldTransforms.size()) && (viewIndex < centers.size())) {
+                 const hlslpp::float4x4 world = drawData.worldTransforms[worldIndex];
+                 const hlslpp::float4 w = hlslpp::mul(hlslpp::float4(pos[v * 3 + 0], pos[v * 3 + 1], pos[v * 3 + 2], 1.0f), world);
+                 const hlslpp::float3 d = w.xyz - centers[viewIndex];

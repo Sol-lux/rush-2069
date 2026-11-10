@@ -25,6 +25,8 @@ namespace RT64 {
     void setTranslucentSort(uint32_t minListDepth);
     void setBloom(float intensity, float threshold, float radius);
     void setPictureAdjust(float brightness, float contrast, float gamma);
+    // rt64-0014: HDR output, read when the swap chain is made.
+    void setHdrOutput(bool enabled, float paperWhiteNits, float peakNits, float highlights);
 }
 
 namespace {
@@ -237,6 +239,32 @@ namespace {
         static constexpr float contrast[] = { 0.8f, 0.9f, 1.0f, 1.1f, 1.2f };
         static constexpr float gamma[] = { 1.25f, 1.12f, 1.0f, 0.89f, 0.8f };
         RT64::setPictureAdjust(brightness[picture_brightness], contrast[picture_contrast], gamma[picture_gamma]);
+    }
+
+    // HDR Output and its levels (runtime-patches/rt64-0014-hdr-output.patch, plume-0006, RecompFrontend-0009).
+    const std::vector<recomp::config::ConfigOptionEnumOption> hdr_output_options = {
+        {0, "Original", "Original"}, {1, "On", "On"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> hdr_paper_white_options = {
+        {0, "100", "100 nits"}, {1, "150", "150 nits"}, {2, "200", "200 nits"}, {3, "250", "250 nits"}, {4, "300", "300 nits"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> hdr_peak_options = {
+        {0, "400", "400 nits"}, {1, "600", "600 nits"}, {2, "800", "800 nits"}, {3, "1000", "1000 nits"}, {4, "1500", "1500 nits"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> hdr_highlights_options = {
+        {0, "None", "None"}, {1, "Low", "Low"}, {2, "Medium", "Medium"}, {3, "High", "High"},
+    };
+    const std::string hdr_output_option = "hdr_output";
+    const std::string hdr_paper_white_option = "hdr_paper_white";
+    const std::string hdr_peak_option = "hdr_peak";
+    const std::string hdr_highlights_option = "hdr_highlights";
+    uint32_t hdr_output = 0, hdr_paper_white = 2, hdr_peak = 3, hdr_highlights = 2;
+    void apply_hdr() {
+        static constexpr float paper_white[] = { 100.0f, 150.0f, 200.0f, 250.0f, 300.0f };
+        static constexpr float peak[] = { 400.0f, 600.0f, 800.0f, 1000.0f, 1500.0f };
+        static constexpr float highlights[] = { 0.0f, 0.33f, 0.66f, 1.0f };
+        RT64::setHdrOutput(hdr_output == 1, paper_white[hdr_paper_white], peak[hdr_peak], highlights[hdr_highlights]);
+        recompui::renderer::set_hdr_ui_white(paper_white[hdr_paper_white]);
     }
 
     // src/battle_tuning.cpp.
@@ -748,6 +776,48 @@ void rush2049::init_config() {
         2
     );
     on_apply(graphics, gamma_option, [](uint32_t value) { picture_gamma = std::min(value, 4u); apply_picture(); });
+
+    graphics.add_enum_option(
+        hdr_output_option,
+        "HDR Output",
+        "For an HDR display with HDR turned on in Windows: the picture is sent as HDR, so the brightest parts (the sky, "
+        "lights, flames) can go brighter than white. Takes effect the next time the game starts."
+        "<br/>"
+        "<b>Original:</b> an SDR picture, as the game shipped. <b>On:</b> HDR, set with the three options below.",
+        hdr_output_options,
+        0
+    );
+    // Called on load too, before the renderer starts. RT64 reads it once, when it makes the swap chain.
+    on_apply(graphics, hdr_output_option, [](uint32_t value) { hdr_output = std::min(value, 1u); apply_hdr(); });
+
+    graphics.add_enum_option(
+        hdr_paper_white_option,
+        "HDR Brightness",
+        "With HDR Output on: how bright the game's white is, the HUD and menus too. Pick what matches the rest of the "
+        "desktop.",
+        hdr_paper_white_options,
+        2
+    );
+    on_apply(graphics, hdr_paper_white_option, [](uint32_t value) { hdr_paper_white = std::min(value, 4u); apply_hdr(); });
+
+    graphics.add_enum_option(
+        hdr_peak_option,
+        "HDR Peak Brightness",
+        "With HDR Output on: the brightest the display can go. Nothing is sent brighter than this.",
+        hdr_peak_options,
+        3
+    );
+    on_apply(graphics, hdr_peak_option, [](uint32_t value) { hdr_peak = std::min(value, 4u); apply_hdr(); });
+
+    graphics.add_enum_option(
+        hdr_highlights_option,
+        "HDR Highlights",
+        "With HDR Output on: how far the brightest parts of the picture are lifted above white, towards the peak "
+        "brightness. <b>None:</b> the picture as SDR shows it, at the HDR Brightness.",
+        hdr_highlights_options,
+        2
+    );
+    on_apply(graphics, hdr_highlights_option, [](uint32_t value) { hdr_highlights = std::min(value, 3u); apply_hdr(); });
 
     graphics.add_enum_option(
         ghost_arrows_option,

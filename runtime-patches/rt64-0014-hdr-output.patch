@@ -1,0 +1,165 @@
+diff --git a/src/hle/rt64_application.cpp b/src/hle/rt64_application.cpp
+index 42eb2e6..6eebe54 100644
+--- a/src/hle/rt64_application.cpp
++++ b/src/hle/rt64_application.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "rt64_application.h"
++#include "rt64_state.h"
+ #include "rhi/rt64_render_hooks.h"
+ 
+ #include <cinttypes>
+@@ -317,6 +318,11 @@ namespace RT64 {
+             break;
+         }
+ 
++        // Rush 2049 patch: HDR output lifts the brightest parts of the picture, which bands at 8 bits a channel.
++        if (hdrOutputRequested()) {
++            usesHDR = true;
++        }
++
+ #   if defined(RT64_WGSL)
+         // The high precision framebuffer's format, rgba16unorm, is a render target or storage texture in WebGPU only with
+         // the optional texture-formats-tier1 feature, the WGSL shaders declare the framebuffer's storage textures rgba8
+@@ -339,6 +345,17 @@ namespace RT64 {
+         RenderTarget::setMaxDimension(long(device->getCapabilities().maxTextureSize));
+ #   endif
+ 
++        // Rush 2049 patch: HDR output, an scRGB swap chain. Its format becomes the one the device prefers, before the
++        // init hook (the settings UI makes its pipelines there) and the shader library (the VI pass's) read it.
++        setHdrOutputActive(false);
++        if (hdrOutputRequested()) {
++            const_cast<RenderDeviceCapabilities &>(device->getCapabilities()).preferredSwapChainFormat = RenderFormat::R16G16B16A16_FLOAT;
++            setHdrOutputActive(true);
++        }
++
++        fprintf(stdout, "HDR output: %s.\n", hdrOutputActive() ? "on, scRGB swap chain" : "off");
++        fflush(stdout);
++
+         // Call the init hook if one was attached.
+         if (replacingDevice) {
+             RenderHookReplaceDevice *replaceHook = GetRenderHookReplaceDevice();
+@@ -370,6 +387,9 @@ namespace RT64 {
+         RenderSwapChainDesc swapChainDesc;
+         swapChainDesc.renderWindow = appWindow->windowHandle;
+         swapChainDesc.format = device->getCapabilities().preferredSwapChainFormat;
++        if (hdrOutputActive()) {
++            swapChainDesc.colorSpace = RenderColorSpace::EXTENDED_SRGB_LINEAR; // Rush 2049 patch: HDR output
++        }
+         swapChainDesc.textureCount = (userConfig.displayBuffering == UserConfiguration::DisplayBuffering::Triple) ? 3 : 2;
+ 
+         // Enable present wait if supported by the device. We specify a max latency of 1 as we use it to wait right before the next
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+index 15ee711..351a5a6 100644
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -71,6 +71,29 @@ namespace RT64 {
+         gamma = pictureGamma.load(std::memory_order_relaxed);
+     }
+ 
++    static std::atomic<bool> hdrRequested{ false };
++    static std::atomic<bool> hdrActive{ false };
++    static std::atomic<float> hdrPaperWhite{ 200.0f };
++    static std::atomic<float> hdrPeak{ 1000.0f };
++    static std::atomic<float> hdrHighlights{ 0.0f };
++
++    void setHdrOutput(bool enabled, float paperWhiteNits, float peakNits, float highlights) {
++        hdrRequested.store(enabled, std::memory_order_relaxed);
++        hdrPaperWhite.store(paperWhiteNits, std::memory_order_relaxed);
++        hdrPeak.store(peakNits, std::memory_order_relaxed);
++        hdrHighlights.store(highlights, std::memory_order_relaxed);
++    }
++
++    bool hdrOutputRequested() { return hdrRequested.load(std::memory_order_relaxed); }
++    void setHdrOutputActive(bool active) { hdrActive.store(active, std::memory_order_relaxed); }
++    bool hdrOutputActive() { return hdrActive.load(std::memory_order_relaxed); }
++
++    void hdrOutputLevels(float &paperWhiteNits, float &peakNits, float &highlights) {
++        paperWhiteNits = hdrPaperWhite.load(std::memory_order_relaxed);
++        peakNits = hdrPeak.load(std::memory_order_relaxed);
++        highlights = hdrHighlights.load(std::memory_order_relaxed);
++    }
++
+     // Rush 2049 patch: a game that draws see-through surfaces (blended, Z compare without Z update) in among the rest of
+     // its scene leaves them to whatever is drawn after: on a console as here, a surface drawn later and farther away
+     // passes the depth test where the see-through one is and paints over it, since the see-through one wrote no depth.
+diff --git a/src/hle/rt64_state.h b/src/hle/rt64_state.h
+index 9de39b3..afa10a3 100644
+--- a/src/hle/rt64_state.h
++++ b/src/hle/rt64_state.h
+@@ -57,6 +57,16 @@ namespace RT64 {
+     void setPictureAdjust(float brightness, float contrast, float gamma);
+     void pictureAdjust(float &brightness, float &contrast, float &gamma);
+ 
++    // Rush 2049 patch: HDR output. Whether it's asked for is read once, when the swap chain is made (Application::setup):
++    // an scRGB swap chain (R16G16B16A16_FLOAT) everything presented draws into, the settings UI too. The VI pass then
++    // writes linear light: the game's white at paperWhite nits, and its brightest parts lifted towards peak nits by
++    // highlights (0 none, 1 all the way). hdrOutputActive says whether the swap chain was made that way.
++    void setHdrOutput(bool enabled, float paperWhiteNits, float peakNits, float highlights);
++    bool hdrOutputRequested();
++    void setHdrOutputActive(bool active);
++    bool hdrOutputActive();
++    void hdrOutputLevels(float &paperWhiteNits, float &peakNits, float &highlights);
++
+     struct State {
+         struct External {
+             Application *app;
+diff --git a/src/render/rt64_vi_renderer.cpp b/src/render/rt64_vi_renderer.cpp
+index 790ad92..598ede6 100644
+--- a/src/render/rt64_vi_renderer.cpp
++++ b/src/render/rt64_vi_renderer.cpp
+@@ -88,6 +88,16 @@ namespace RT64 {
+         pushConstants.textureResolution = { float(p.textureWidth), float(p.textureHeight) };
+         pushConstants.gamma = p.vi->gamma();
+         pictureAdjust(pushConstants.brightness, pushConstants.contrast, pushConstants.userGamma);
++        pushConstants.hdrPaperWhite = 0.0f;
++        pushConstants.hdrPeak = 0.0f;
++        pushConstants.hdrHighlights = 0.0f;
++        if (hdrOutputActive()) {
++            float paperWhite, peak, highlights;
++            hdrOutputLevels(paperWhite, peak, highlights);
++            pushConstants.hdrPaperWhite = paperWhite / 80.0f;
++            pushConstants.hdrPeak = std::max(peak, paperWhite) / 80.0f;
++            pushConstants.hdrHighlights = highlights;
++        }
+ 
+         p.commandList->setPipeline(shader->pipeline.get());
+         p.commandList->setGraphicsPipelineLayout(shader->pipelineLayout.get());
+diff --git a/src/shaders/VideoInterfacePS.hlsl b/src/shaders/VideoInterfacePS.hlsl
+index 56c942d..ced3350 100644
+--- a/src/shaders/VideoInterfacePS.hlsl
++++ b/src/shaders/VideoInterfacePS.hlsl
+@@ -26,6 +26,16 @@ float4 SampleInput(float2 uv) {
+     // Rush 2049 patch: the player's brightness, contrast and gamma.
+     gammaCorrectedColor.rgb = pow(saturate(gammaCorrectedColor.rgb), gConstants.userGamma);
+     gammaCorrectedColor.rgb = saturate((gammaCorrectedColor.rgb - 0.5f) * gConstants.contrast + 0.5f + gConstants.brightness);
++    // Rush 2049 patch: HDR output. The game's colours as an SDR display shows them (gamma 2.2) in linear light, its
++    // white at paper white, the parts brighter than most of the picture lifted smoothly towards the peak.
++    if (gConstants.hdrPaperWhite > 0.0f) {
++        float3 linearColor = pow(gammaCorrectedColor.rgb, 2.2f);
++        const float luminance = dot(linearColor, float3(0.2126f, 0.7152f, 0.0722f));
++        const float lift = saturate((luminance - 0.5f) / 0.5f);
++        const float ratio = gConstants.hdrPeak / gConstants.hdrPaperWhite;
++        linearColor *= gConstants.hdrPaperWhite * (1.0f + (ratio - 1.0f) * gConstants.hdrHighlights * lift * lift * lift);
++        gammaCorrectedColor.rgb = min(linearColor, gConstants.hdrPeak);
++    }
+     gammaCorrectedColor.rgb *= max(1.0f - outsideBorder.x - outsideBorder.y, 0.0f);
+     gammaCorrectedColor.a = 1.0f;
+     return gammaCorrectedColor;
+diff --git a/src/shared/rt64_video_interface.h b/src/shared/rt64_video_interface.h
+index bbf0841..8a20f2d 100644
+--- a/src/shared/rt64_video_interface.h
++++ b/src/shared/rt64_video_interface.h
+@@ -18,6 +18,11 @@ namespace interop {
+         float brightness;
+         float contrast;
+         float userGamma;
++        // Rush 2049 patch: HDR output (setHdrOutput), in scRGB units (80 nits each): the game's white, the brightest the
++        // display is asked for, and how far towards it the brightest parts go. hdrPaperWhite 0 for SDR output.
++        float hdrPaperWhite;
++        float hdrPeak;
++        float hdrHighlights;
+     };
+ #ifdef HLSL_CPU
+ };

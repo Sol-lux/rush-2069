@@ -20,7 +20,11 @@ RecompFrontend-0007    set_cursor_always_visible: the cursor stays shown while a
                        still hides while the cursor is locked for mouse aiming)
 RecompFrontend-0008    set_cursor_shown_while_moving: the cursor shows while the mouse moves, whatever input was last,
                        and hides after two seconds still; the cursor's state is set every frame, not only on an event
+RecompFrontend-0009    HDR output's menus (set_hdr_ui_white): with an scRGB swap chain the menus still draw in 8-bit
+                       sRGB and go out in linear light at the given white
 plume-0005             a query pool read of only the queries written (Vulkan calls a read with an unwritten one not ready)
+plume-0006             a swap chain's color space (RenderSwapChainDesc::colorSpace): scRGB for HDR output, on D3D12 and
+                       Vulkan (VK_EXT_swapchain_colorspace)
 rt64-0001              viewports with left and right edge origins (split screen); fill-rect fix
 rt64-0003              GPU timings for --gpu-profile, split into the parts of each pass (none read on the web)
 rt64-0004              one barrier call around all of a frame's buffer uploads, not one per uploader
@@ -43,4 +47,6 @@ rt64-0012              bloom (setBloom): before the HUD of each scene that draws
                        VibinToast's RT64 fork for Jet Force Gemini (MIT); none on a WGSL build
 rt64-0013              the player's brightness, contrast and gamma (setPictureAdjust), in the VI pass over the whole
                        picture after the VI's own gamma
+rt64-0014              HDR output (setHdrOutput): an scRGB swap chain, read at startup; the VI pass writes linear light
+                       at a paper white with highlights lifted towards a peak; the 16-bit target turned on with it
 ```

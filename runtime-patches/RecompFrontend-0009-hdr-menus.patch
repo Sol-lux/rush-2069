@@ -1,0 +1,171 @@
+diff --git a/recompui/include/recompui/renderer.h b/recompui/include/recompui/renderer.h
+index c63b755..c812d86 100644
+--- a/recompui/include/recompui/renderer.h
++++ b/recompui/include/recompui/renderer.h
+@@ -54,6 +54,9 @@ namespace recompui {
+         // doesn't wait for it. A game whose CPU reads a frame it has just drawn reads the one before then.
+         void set_render_to_ram_late(bool late);
+ 
++        // Rush 2049 patch: with HDR output (RT64::setHdrOutput), how bright the menus' white is, in nits.
++        void set_hdr_ui_white(float nits);
++
+         RT64::UserConfiguration::Antialiasing RT64MaxMSAA();
+         bool RT64SamplePositionsSupported();
+         bool RT64HighPrecisionFBEnabled();
+diff --git a/recompui/shaders/InterfacePS.hlsl b/recompui/shaders/InterfacePS.hlsl
+index 4d8a419..47a11e0 100644
+--- a/recompui/shaders/InterfacePS.hlsl
++++ b/recompui/shaders/InterfacePS.hlsl
+@@ -1,3 +1,15 @@
++// Rush 2049 patch: HDR output. The push constants InterfaceVS has, for hdrWhite: above 0, the colour (sRGB, an SDR
++// display's gamma 2.2) goes out in linear light with white at hdrWhite, for an scRGB swap chain.
++struct Input {
++    float4x4 transform;
++    float2 translation;
++    float hdrWhite;
++    float premultiplied;
++};
++
++[[vk::push_constant]]
++ConstantBuffer<Input> gInput : register(b0, space0);
++
+ SamplerState gSampler : register(s1, space0);
+ Texture2D<float4> gTexture : register(t2, space1);
+ 
+@@ -8,4 +20,8 @@ void PSMain(
+ )
+ {
+     oColor = gTexture.Sample(gSampler, iUV) * iColor;
++    if (gInput.hdrWhite > 0.0f) {
++        const float alpha = (gInput.premultiplied > 0.0f) ? max(oColor.a, 1.0f / 255.0f) : 1.0f;
++        oColor.rgb = pow(saturate(oColor.rgb / alpha), 2.2f) * gInput.hdrWhite * alpha;
++    }
+ }
+diff --git a/recompui/shaders/InterfaceVS.hlsl b/recompui/shaders/InterfaceVS.hlsl
+index 05fd649..4376608 100644
+--- a/recompui/shaders/InterfaceVS.hlsl
++++ b/recompui/shaders/InterfaceVS.hlsl
+@@ -1,6 +1,8 @@
+ struct Input {
+     float4x4 transform;
+     float2 translation;
++    float hdrWhite; // Rush 2049 patch: InterfacePS's
++    float premultiplied;
+ };
+ 
+ [[vk::push_constant]]
+diff --git a/recompui/src/renderer/ui_renderer.cpp b/recompui/src/renderer/ui_renderer.cpp
+index 170c981..b9222e9 100644
+--- a/recompui/src/renderer/ui_renderer.cpp
++++ b/recompui/src/renderer/ui_renderer.cpp
+@@ -3,6 +3,7 @@
+ #define WIN32_LEAN_AND_MEAN
+ #endif
+ 
++#include <atomic>
+ #include <fstream>
+ #include <filesystem>
+ 
+@@ -15,6 +16,7 @@
+ #include "RmlUi/Core/Core.h"
+ 
+ #include "ui_renderer.h"
++#include "recompui/renderer.h"
+ 
+ #if defined(RT64_WGSL)
+ // WebGPU (RT64's WGSL build, always on with Emscripten): the shaders are WGSL only.
+@@ -77,8 +79,20 @@ void CalculateTextureRowWidthPadding(uint32_t rowPitch, uint32_t &rowWidth, uint
+ struct RmlPushConstants {
+     Rml::Matrix4f transform;
+     Rml::Vector2f translation;
++    // Rush 2049 patch: HDR output. The menus' white in scRGB units for a draw onto an scRGB swap chain, 0 otherwise;
++    // premultiplied set for the layer drawn into with MSAA, whose colours are already multiplied by their alpha.
++    float hdr_white = 0.0f;
++    float premultiplied = 0.0f;
+ };
+ 
++namespace {
++    std::atomic<float> hdr_ui_white{ 2.5f };
++}
++
++void recompui::renderer::set_hdr_ui_white(float nits) {
++    hdr_ui_white.store(nits / 80.0f, std::memory_order_relaxed);
++}
++
+ struct TextureHandle {
+     std::unique_ptr<plume::RenderTexture> texture;
+     std::unique_ptr<plume::RenderDescriptorSet> set;
+@@ -136,6 +150,10 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
+     // The swap chain's format, which the menus draw into: the device's preferred one, as RT64 creates it with (bgra8unorm
+     // natively; on a page the one the browser presents without a copy).
+     plume::RenderFormat swap_chain_format_;
++    // Rush 2049 patch: HDR output. With an scRGB swap chain (R16G16B16A16_FLOAT) the menus still draw in 8-bit sRGB,
++    // into the MSAA layer if there is one (ui_format_), and are turned into linear light where they reach the swap chain.
++    bool hdr_ = false;
++    plume::RenderFormat ui_format_;
+     int scissor_x_ = 0;
+     int scissor_y_ = 0;
+     int scissor_width_ = 0;
+@@ -232,10 +250,12 @@ public:
+         interface_ = interface;
+         device_ = device;
+         swap_chain_format_ = device->getCapabilities().preferredSwapChainFormat;
++        hdr_ = (swap_chain_format_ == plume::RenderFormat::R16G16B16A16_FLOAT);
++        ui_format_ = hdr_ ? plume::RenderFormat::B8G8R8A8_UNORM : swap_chain_format_;
+ 
+         // Enable 4X MSAA if supported by the device.
+         const plume::RenderSampleCounts desired_sample_count = plume::RenderSampleCount::COUNT_8;
+-        if (device_->getSampleCountsSupported(swap_chain_format_) & desired_sample_count) {
++        if (device_->getSampleCountsSupported(ui_format_) & desired_sample_count) {
+             multisampling_.sampleCount = desired_sample_count;
+         }
+ 
+@@ -288,7 +308,7 @@ public:
+         // Create the pipeline layout
+         plume::RenderPipelineLayoutBuilder layout_builder{};
+         layout_builder.begin(false, true);
+-        layout_builder.addPushConstant(0, 0, sizeof(RmlPushConstants), plume::RenderShaderStageFlag::VERTEX);
++        layout_builder.addPushConstant(0, 0, sizeof(RmlPushConstants), plume::RenderShaderStageFlag::VERTEX | plume::RenderShaderStageFlag::PIXEL);
+         // Add the descriptor set for descriptors changed once per frame.
+         layout_builder.addDescriptorSet(sampler_set_builder);
+         // Add the descriptor set for descriptors changed once per draw.
+@@ -327,6 +347,7 @@ public:
+ 
+         if (multisampling_.sampleCount > 1) {
+             pipeline_desc.multisampling = multisampling_;
++            pipeline_desc.renderTargetFormat[0] = ui_format_;
+             pipeline_ms_ = device_->createGraphicsPipeline(pipeline_desc);
+ 
+             // Create the descriptor set for the screen drawer.
+@@ -484,7 +505,8 @@ public:
+ 
+         RmlPushConstants constants{
+             .transform = mvp_,
+-            .translation = translation
++            .translation = translation,
++            .hdr_white = (hdr_ && (multisampling_.sampleCount <= 1)) ? hdr_ui_white.load(std::memory_order_relaxed) : 0.0f
+         };
+ 
+         list_->setGraphicsPushConstants(0, &constants);
+@@ -668,8 +690,8 @@ public:
+         if (multisampling_.sampleCount > 1) {
+             if (window_width_ != image_width || window_height_ != image_height) {
+                 screen_framebuffer_.reset();
+-                screen_texture_ = device_->createTexture(plume::RenderTextureDesc::ColorTarget(image_width, image_height, swap_chain_format_));
+-                screen_texture_ms_ = device_->createTexture(plume::RenderTextureDesc::ColorTarget(image_width, image_height, swap_chain_format_, multisampling_));
++                screen_texture_ = device_->createTexture(plume::RenderTextureDesc::ColorTarget(image_width, image_height, ui_format_));
++                screen_texture_ms_ = device_->createTexture(plume::RenderTextureDesc::ColorTarget(image_width, image_height, ui_format_, multisampling_));
+                 const plume::RenderTexture *color_attachment = screen_texture_ms_.get();
+                 screen_framebuffer_ = device_->createFramebuffer(plume::RenderFramebufferDesc(&color_attachment, 1));
+                 screen_descriptor_set_->setTexture(0, screen_texture_.get(), plume::RenderTextureLayout::SHADER_READ);
+@@ -730,7 +752,9 @@ public:
+ 
+             RmlPushConstants constants{
+                 .transform = Rml::Matrix4f::Identity(),
+-                .translation = Rml::Vector2f(0.0f, 0.0f)
++                .translation = Rml::Vector2f(0.0f, 0.0f),
++                .hdr_white = hdr_ ? hdr_ui_white.load(std::memory_order_relaxed) : 0.0f,
++                .premultiplied = 1.0f
+             };
+ 
+             list_->setGraphicsPushConstants(0, &constants);

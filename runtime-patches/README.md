@@ -69,4 +69,8 @@ rt64-0019              shadows on the ground: every perspective indexed draw tak
                        came out a little off, so the exact test missed it), one that writes none where nothing nearer is
 rt64-0020              shadows: see-through draws (ZMODE_XLU, such as a tunnel's light panels) cast nothing, though
                        they write depth; they still take shadows
+rt64-0021              shadows: the depth pass from the sun clamps rather than clips (pancaking), so a tall building's
+                       top, nearer the sun than the map's near end, keeps casting as the box moves; the receive pass's
+                       own-depth tolerances grow with fwidth of the depth, so a road seen at a grazing angle keeps its
+                       shadow at any view angle
 ```

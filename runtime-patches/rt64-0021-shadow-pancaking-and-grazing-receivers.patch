@@ -1,0 +1,28 @@
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -1168,7 +1168,9 @@
+             depthDesc.depthEnabled = true;
+             depthDesc.depthWriteEnabled = true;
+             depthDesc.depthFunction = RenderComparisonFunction::LESS;
+-            depthDesc.depthClipEnabled = true;
++            // Pancaking: casters nearer the sun than the map's near end are clamped onto it rather than clipped, so a tall
++            // building's top keeps casting as the box moves with the camera.
++            depthDesc.depthClipEnabled = false;
+             depthDesc.slopeScaledDepthBias = 1.5f;
+             depthDesc.cullMode = RenderCullMode::NONE;
+             depthDesc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+--- a/src/shaders/ShadowPS.hlsl
++++ b/src/shaders/ShadowPS.hlsl
+@@ -48,8 +48,11 @@
+     // depth comes out a little different, while the see-through parts of a tree's picture (which wrote none) have the
+     // sky's or something else's behind them. A draw that writes no depth (the ground's decals) is in view where nothing
+     // nearer was drawn over it.
++    // The tolerances grow with how fast the depth changes across the pixel, so a surface seen at a grazing angle (the
++    // road far ahead) still finds itself rather than losing its shadow depending on the view's angle.
+     const float scene = sceneDepth(int2(iPosition.xy));
+-    if ((gConstants.ownDepth > 0.5f) ? (abs(scene - iPosition.z) > 2e-4f) : (scene < iPosition.z - 2e-5f)) {
++    const float slope = fwidth(iPosition.z);
++    if ((gConstants.ownDepth > 0.5f) ? (abs(scene - iPosition.z) > (2e-4f + 2.0f * slope)) : (scene < iPosition.z - (2e-5f + 2.0f * slope))) {
+         discard;
+     }
+ 

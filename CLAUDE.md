@@ -10,13 +10,13 @@ planned, is `docs/mods.md`.
 
 ## What lives where
 
-This repo is the game: its recompilation, enhancements and settings, the desktop build and its releases, and its own
-web page (how it is built and published, its prebuilt shader list, its play plan).
+This repo is the game: its recompilation, enhancements and settings, and the desktop build and its releases. The
+desktop build is the only target.
 
-The web support every recomp's page shares is N64Recomp-browser (`lib/N64Recomp-browser`): the forks of rt64, plume,
-hlslpp, N64Recomp, N64ModernRuntime and RecompFrontend, the frontend, and the other games' web forks. It is developed
-and documented there (its CLAUDE.md for the rules and The pins, its `docs/` for the how-to), and a game-agnostic web
-change is made there and reaches this game when a pull request here moves the pin (`docs/releasing.md`).
+`lib/N64Recomp-browser` holds the forks of rt64, plume, hlslpp, N64Recomp, N64ModernRuntime and RecompFrontend that
+this build is made from, as patches on upstream. It is developed and documented there (its CLAUDE.md for the rules and
+The pins, its `docs/` for the how-to), and a change to a fork reaches this game when the pin moves
+(`docs/releasing.md`).
 
 ## Where things are written down
 
@@ -33,14 +33,14 @@ points at the other.
   commit. A finding that explains code goes beside that code.
 - `docs/`, read when the task needs it:
   - `docs/building.md`: a fresh checkout, the remote build, running the game, the developer flags, testing in the game.
-  - `docs/releasing.md`: desktop releases, publishing the page, moving `lib/N64Recomp-browser`.
-  - `docs/web.md`: what of the web target is this game's own, and the `headless/` build.
+  - `docs/releasing.md`: desktop releases, moving `lib/N64Recomp-browser`.
+  - `docs/web.md`: the `headless/` build.
   - `docs/ruled-out.md`: what has been tried and measured, so don't retry it. Read it before a performance or
     rendering change.
   - `docs/mods.md`: the gameplay mods, done and planned, and the game memory and code each one uses.
 - **This file**: only what an agent can't get from the others. It changes when a rule changes.
 
-This repo and the web repos are public. Write for a stranger, in the present tense: nothing about a contributor's own
+This repo is public. Write for a stranger, in the present tense: nothing about a contributor's own
 machine, servers, paths or accounts, no person's name, no history of renames or "until <date>", and nothing about where
 anyone keeps ROMs.
 
@@ -62,7 +62,7 @@ anyone keeps ROMs.
   with N64Recomp-browser's patch in.
 - Never open a PR, issue or discussion upstream at rt64, plume, N64Recomp, N64ModernRuntime, RecompFrontend,
   BanjoRecomp, Zelda64Recomp or Donkey-Kong-64-Recompiled: their CONTRIBUTING.md asks for no LLM-written code
-  (plume's, no AI-made contribution and no AI talking to its maintainers). The web forks stay forks.
+  (plume's, no AI-made contribution and no AI talking to its maintainers). The forks stay forks.
 - Code from a repo without a license is never copied: facts learned from one only.
 - Priority is by what it breaks: high for a crash or anything that stops the game being played, low for a small
   improvement.
@@ -70,7 +70,7 @@ anyone keeps ROMs.
   Anything that changes behaviour needs a run of the game before it lands (`docs/building.md`). Pure code (resampler,
   limiters, the MusyX side mix, Draw Distance's matrix scaling) has tests in `tests/` that CI runs; new pure code gets
   one.
-- Nothing is released, published or pushed unless the owner asks: no desktop release and no page republish follow a
+- Nothing is released, published or pushed unless the owner asks: no desktop release follows a
   merge on their own. When the owner does ask, `docs/releasing.md` says how.
 
 ## How it fits together
@@ -94,7 +94,7 @@ anyone keeps ROMs.
   N64Recomp-browser's patches (each fork as one patch on upstream) and then `runtime-patches/`, so the tree is the
   forks' with the game's changes, natively too. A fork change is named by its label in N64Recomp-browser's
   `docs/forks.md` (rt64-0007) or by its fork and commit (rt64 7734fe4).
-- The desktop build sets three of the forks' options that are on with Emscripten (CMakeLists.txt):
+- The desktop build sets three of the forks' options (CMakeLists.txt):
   `RT64_FLIPPED_RECT_HIGH_RES` (rt64 fe91344, the hi-res title's strips), `ULTRAMODERN_LIBULTRA_THREAD_STOP`
   (N64ModernRuntime 0df8334: the game stops its threads from other threads) and
   `RECOMPINPUT_SINGLE_PLAYER_UNTIL_ASSIGNED` (RecompFrontend bf01590: Per Player is One Player until a controller

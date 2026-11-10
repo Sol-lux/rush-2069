@@ -8,6 +8,12 @@ Lock-on: the game runs its aim routine (`ovl2_func_8038F568`) only for weapons 0
 enemy ahead within 2000 and swings the aim toward it 0.01 rad a frame (about 34°/s at 60 fps), the same for all of
 them. The others fire straight.
 
+Accuracy: only the machine gun has spread. Each round gets a random yaw and pitch offset of up to ±0.0125 rad
+(±0.72°, uniform, constants at `0x80394EE8`/`0x80394EEC` and `0x80394EF0`/`0x80394EF4` in the MG case of
+`ovl2_func_8038FCE0`, from the game's RNG `func_8008B2E4`). That's about ±25 units of drift at the lock-on range
+of 2000. Every other weapon, the pea shooter and light missile included, fires exactly along its aim. The other
+random calls in the fire code only vary sounds and effects.
+
 ## Original
 
 | # | Weapon | Ammo | Damage | Rate (rpm) | Lock-on |
@@ -29,20 +35,19 @@ Cars touching do no damage on their own: only the Rammer hurts on contact. A shi
 Changes are ==highlighted==. On top of these, every hit is halved (Double Health), so e.g. a mine does 400.
 {Suggest changes in {}, updated when it's coded}
 
-### Snapshot 1
+### Snapshot 2wip
 
-| #   | Weapon              | Ammo | Damage                                                  | Rate (rpm)                                          | Lock-on                                          |
-| --- | ------------------- | ---- | ------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------ |
-| 8   | Pea shooter         | ∞    | ==107 direct (+33%)==                                   | 360, ==auto fire while held==                       | yes                                              |
-| 1   | Machine gun         | 100  | 114 {80}                                                | ==300 from rest, spins up to 1800 over 1.5 s held== | yes                                              |
-| 6   | Light missile       | 20   | 520 / splash 520                                        | 360                                                 | yes                                              |
-| 4   | Heavy 3-shot rocket | 3    | 960 / splash 960                                        | 60                                                  | no                                               |
-| 2   | Bouncy ball         | 20   | 800 / splash 800 {600 / 500}                            | 360                                                 | no                                               |
-| 0   | Plasma blaster      | 20   | 400 {push out onefold (rammer is fourfold)}             | 360 {420}                                           | yes in the code                                  |
-| 3   | Mines               | 3    | 800 on touch                                            | one drop a press                                    | n/a                                              |
-| 7   | Sonic Boom          | 5    | 800 / 400 / 200; ==push 1.5× out, 0.4× up, flip 0.45×== | 60                                                  | no                                               |
-| 5   | Rammer              | 5    | ==200 + 5 × speed push fourfold==                       | ==60 max (1 s)==                                    | n/a; ==pushes the target away along the ground== |
-
+| #   | Weapon              | Ammo | Damage                                                        | Rate (rpm)                                                                                                                            | Lock-on                                          |
+| --- | ------------------- | ---- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| 8   | Pea shooter         | ∞    | ==107 direct (+33%)==                                         | 360, ==auto fire while held==                                                                                                         | yes                                              |
+| 1   | Machine gun         | 100  | 114 {80}                                                      | ==300 from rest, spins up to 1800 over 1.5 s held== {spin up 3s, spin down 1.5s; may need a whir up and down sound to help indicate.} | yes                                              |
+| 6   | Light missile       | 20   | 520 / splash 520                                              | 360                                                                                                                                   | yes                                              |
+| 0   | Plasma blaster      | 20   | 400 {push 400000 away from the shooter (slider)}              | 360 {420}                                                                                                                             | yes in the code                                  |
+| 3   | Mines               | 3    | 800 on touch                                                  | one drop a press                                                                                                                      | n/a                                              |
+| 5   | Rammer              | 5    | ==200 + 5 × speed; push 800000 at speed 80 (200000-1000000)== | ==60 max (1 s)==                                                                                                                      | n/a; ==pushes the target away along the ground== |
+| 2   | Bouncy ball         | 20   | 800 / splash 800 {600 / 500}                                  | 360                                                                                                                                   | no                                               |
+| 7   | Sonic Boom          | 5    | 800 / 400 / 200; ==push 1.5× out, 0.4× up, flip 0.45×==       | 60                                                                                                                                    | no                                               |
+| 4   | Heavy 3-shot rocket | 3    | 960 / splash 960 {1320 / 1000}                                | 60                                                                                                                                    | no                                               |
 # Snapshots
 
 Stats known to work, to roll back to: `git checkout snapshot-N -- src/battle_tuning.cpp include/rush2049_game.h us.toml`
@@ -63,9 +68,14 @@ Stats known to work, to roll back to: `git checkout snapshot-N -- src/battle_tun
   in-game
 - Mines: the first two in 111406 did no damage with the enemy right there
 - An in-game way to dial stats: a mods-menu panel, or F1-F10 keys with an overlay
-- ~~Powerups give a small cooldown bar at the bottom~~ coded, to play: 64 x 3 px amber bar, bottom centre of each view,
-  for reloads of 0.25 s and up (size, gap and threshold are constants in `include/rush2049_game.h`)
-
+- ~~Powerups give a small cooldown bar~~ coded, to play: 64 x 3 px bar, top centre of each view, one per timed
+  powerup (invisibility violet, shield blue; both 30 s), emptying as it runs out (colours and size are constants in
+  `include/rush2049_game.h`)
+- ~~Invisibility hides the arrow~~ coded, to play. Next: the car's own alpha (the game keeps it at 0x20 or more,
+  `func_8008C884`; the fade is record +0x3A1, 255 down to 16 by 8 a frame)
+MAPPING:
+Large missile rocket flying speed (+10%)
+ 
 # Mod: Armor Rehaul
 will get merged into Battle+
 Heavy > H. Alloy > Standard > S. Alloy > Light > L. Alloy

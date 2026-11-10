@@ -78,10 +78,9 @@ namespace rush2049 {
     // reload given then; and the reload for a level.
     float spin_after_shot(float level, float gap, float last_interval);
     float spin_interval(float level);
-    // Battle Mode Alt's Rammer: its refire, and the push a ram gives: rammer_push_force (the force an impact gives is
+    // Battle Mode Alt's Rammer: its refire, and the push a ram gives: the Rammer push tuning (the force an impact gives is
     // 330000) times the rammer's speed over the reference, clamped, flat along the ground away from the rammer.
     constexpr float rammer_refire_seconds = 1.0f;
-    constexpr float rammer_push_force = 800000.0f;
     constexpr float rammer_push_reference_speed = 80.0f;
     constexpr float rammer_push_min_scale = 0.25f;
     constexpr float rammer_push_max_scale = 1.25f;
@@ -91,7 +90,8 @@ namespace rush2049 {
     float rammer_damage(float speed);
     // The push on the target's car, in its frame: target and hitter are record positions (+0x8), matrix the target
     // record's (+0x2C), speed the rammer car's (+0x3F0).
-    void rammer_push(const float target[3], const float hitter[3], const float matrix[9], float speed, float out[3]);
+    void rammer_push(const float target[3], const float hitter[3], const float matrix[9], float speed, float force,
+                     float out[3]);
     // Battle Mode Alt's pea shooter (weapon 8, held with no pickup): a direct hit's damage times this (as shipped 80).
     constexpr int pea_damage_num = 4;
     constexpr int pea_damage_den = 3;
@@ -101,14 +101,40 @@ namespace rush2049 {
     constexpr float sonic_out_scale = 1.5f;
     constexpr float sonic_up_scale = 0.4f;
     constexpr float sonic_spin_scale = 0.3f;
-    // Battle Mode Alt's cooldown bar: drawn under each player's view while the refire timer of a weapon whose reload is
-    // at least cooldown_bar_min_reload runs (so not the machine gun or pea shooter); its size and place in pixels.
-    constexpr float cooldown_bar_min_reload = 0.25f;
+    // Battle Mode Alt's tuning: values the Battle Tuning mod's options set (its sliders in the Mods tab,
+    // battle_tuning_mod/, read by src/battle_tuning_mod.cpp), at these defaults without it. The bouncy ball (projectile
+    // type 2) leaves at its speed along the aim, tilted up by its angle in degrees, plus the car's own velocity, and
+    // lives its lifetime in seconds; in flight its fall speed grows by the world's gravity (0x80142764) times its
+    // gravity; on a bounce, in the surface's frame, the speed into the surface turns round and keeps its bounce share,
+    // and the speed along it its grip share (75, 3.17 s, 2.5, 0.9 and 1 as shipped, angle 0). A plasma hit pushes the
+    // car hit along the shot, flat, by its force (none as shipped); a ram pushes its target by its force at
+    // rammer_push_reference_speed.
+    enum Tuning { ball_launch_speed, ball_lifetime, ball_gravity_scale, ball_bounce_up, ball_bounce_along, ball_angle,
+                  plasma_push, rammer_push_force, tuning_count };
+    // The mod's option ids, in Tuning order, and the defaults.
+    constexpr const char* tuning_ids[tuning_count] = { "ball_launch_speed", "ball_lifetime", "ball_gravity",
+        "ball_bounce_up", "ball_bounce_along", "ball_angle", "plasma_push", "rammer_push" };
+    constexpr float tuning_defaults[tuning_count] = { 75.0f, 3.1666667f, 2.5f, 0.9f, 1.0f, 0.0f, 400000.0f,
+                                                      800000.0f };
+    void set_tuning(Tuning which, float value);
+    float tuning(Tuning which);
+    // Reads the Battle Tuning mod's options into set_tuning (src/battle_tuning_mod.cpp); once a Battle frame.
+    void poll_battle_tuning();
+    // A flat push along (dx, dz), the force's size, rotated into a car's frame by matrix (a record's +0x2C).
+    void flat_push(float dx, float dz, const float matrix[9], float force, float out[3]);
+    // The aim (unit) tilted up by degrees, in the vertical plane through it.
+    void tilt_up(const float aim[3], float degrees, float out[3]);
+    // Battle Mode Alt's powerup bar: at the top of each player's view while it holds a timed powerup, in the powerup's
+    // colour (RGB, 0-31 each); with both, each takes half the bar. Size and place in pixels.
+    enum Powerup { powerup_invisibility, powerup_shield, powerup_count };
+    constexpr float powerup_seconds = 30.0f;
+    constexpr int powerup_colours[powerup_count][3] = { { 31, 31, 31 }, { 6, 20, 31 } };  // white, blue
     constexpr int cooldown_bar_width = 64;
     constexpr int cooldown_bar_height = 3;
-    constexpr int cooldown_bar_bottom_gap = 6;  // from the view's bottom edge
-    // The share of the bar filled: 0 just fired, 1 ready. timer is the refire timer, reload what it was set to.
-    float cooldown_fill(float timer, float reload);
+    constexpr int cooldown_bar_top_gap = 6;  // from the view's top edge
+    // Each powerup's share left (1 full, 0 out), or -1 when not held, from the record's flags (+0x38C) and the
+    // invisibility (+0x390) and shield (+0x394) time left.
+    void powerup_fills(uint32_t flags, float invisible_left, float shield_left, float out[powerup_count]);
 }
 
 #endif

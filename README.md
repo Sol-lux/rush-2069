@@ -86,7 +86,9 @@ option has an Original value that runs the game as it shipped.
   a ram pushes the other car away along the ground, harder the faster you hit. The gun you have with no pickup fires
   while you hold the button and hits a third harder. The Sonic Boom throws cars out further but lifts and flips them
   less. A weapon with a long reload (missiles, mines, Rammer, Sonic Boom) shows a small bar at the bottom of your view
-  that fills until it can fire again.
+  that fills until it can fire again. A plasma hit shoves the car it hits along the shot. The Battle Tuning
+  mod (`battle_tuning_mod/`, in the mods folder) puts sliders in the Mods tab for the bouncy ball's speed, angle,
+  lifetime, gravity and bounce and for the plasma and Rammer pushes, read while you play.
 - **Large Controller Paks**: about 1.9 MB of save space per pak instead of 32 KiB, so ghosts and profiles don't
   run out of room.
 - **Rumble and saves together**: every controller has both a Controller Pak and a Rumble Pak in, so races rumble and

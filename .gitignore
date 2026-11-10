@@ -52,3 +52,4 @@ __pycache__/
 /recomp.log
 /probe_battle/*.log
 /build-old-safetybox/
+battle_tuning_mod/build/

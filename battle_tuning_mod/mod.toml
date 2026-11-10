@@ -1,0 +1,114 @@
+# Battle Tuning: sliders in the Mods tab for Battle Mode Alt's stats (README, "Battle Mode Alt"). The game reads
+# them by this mod's id (src/battle_tuning.cpp); the defaults here match the game's own (include/rush2049_game.h).
+# Build: make CC="$MIPS_CC" LD="$MIPS_LD", then ../build/RecompModTool mod.toml build, and copy
+# build/rush2049_battle_tuning.nrm to the game's mods folder.
+
+[manifest]
+id = "rush2049_battle_tuning"
+version = "1.0.0"
+display_name = "Battle Tuning"
+description = """
+Sliders for Battle Mode Alt's stats (General tab: Battle Mode Alt at Alt). Changes take effect on the next shot. \
+With this mod off, the game uses the defaults."""
+short_description = "Tune Battle Mode Alt's weapons."
+authors = [ "San Francisco Rush 2049: Recompiled" ]
+game_id = "rush2049"
+minimum_recomp_version = "0.0.1"
+dependencies = []
+optional_dependencies = []
+native_libraries = []
+
+[[manifest.config_options]]
+id = "ball_launch_speed"
+name = "Bouncy Ball: Speed"
+description = "How fast a ball leaves along your aim, before your car's own speed is added. 75 as shipped."
+type = "Number"
+min = 10
+max = 400
+step = 5
+precision = 0
+default = 75
+
+[[manifest.config_options]]
+id = "ball_lifetime"
+name = "Bouncy Ball: Lifetime"
+description = "Seconds a ball lasts. 3.17 as shipped."
+type = "Number"
+min = 0.5
+max = 10
+step = 0.05
+precision = 2
+default = 3.17
+
+[[manifest.config_options]]
+id = "ball_gravity"
+name = "Bouncy Ball: Gravity"
+description = "How hard a ball falls, times the world's gravity. Lower is a floatier arc. 2.5 as shipped."
+type = "Number"
+min = 0
+max = 8
+step = 0.1
+precision = 1
+default = 2.5
+
+[[manifest.config_options]]
+id = "ball_bounce_up"
+name = "Bouncy Ball: Bounce"
+description = "Share of its speed into the ground a ball keeps on a bounce. 1 bounces forever. 0.9 as shipped."
+type = "Number"
+min = 0
+max = 1.2
+step = 0.05
+precision = 2
+default = 0.9
+
+[[manifest.config_options]]
+id = "ball_bounce_along"
+name = "Bouncy Ball: Grip"
+description = "Share of its speed along the ground a ball keeps on a bounce; below 1 slows it. 1 as shipped."
+type = "Number"
+min = 0
+max = 1.2
+step = 0.05
+precision = 2
+default = 1
+
+[[manifest.config_options]]
+id = "ball_angle"
+name = "Bouncy Ball: Angle"
+description = "Degrees the shot is tilted up from your aim (negative tilts it down). 0 as shipped."
+type = "Number"
+min = -30
+max = 60
+step = 1
+precision = 0
+default = 0
+
+[[manifest.config_options]]
+id = "plasma_push"
+name = "Plasma: Push"
+description = "Force a plasma hit pushes the car along the shot, flat along the ground. 0 is as shipped (none). For scale: a missile's blast is 330000 (plus lift and flip), a full-speed Rammer 800000."
+type = "Number"
+min = 0
+max = 2000000
+step = 10000
+precision = 0
+default = 400000
+
+[[manifest.config_options]]
+id = "rammer_push"
+name = "Rammer: Push"
+description = "Force a ram pushes its target away at the reference speed (80); it scales with the rammer's speed, 0.25x to 1.25x. 0 is as shipped (none)."
+type = "Number"
+min = 0
+max = 3000000
+step = 10000
+precision = 0
+default = 800000
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "rush2049_battle_tuning"
+func_reference_syms_file = "../syms/rush2049.us.syms.toml"
+data_reference_syms_files = [ "../syms/rush2049.us.datasyms.toml" ]
+additional_files = []

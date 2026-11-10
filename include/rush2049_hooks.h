@@ -78,12 +78,23 @@ void rush2049_rammer_hit(uint8_t* rdram, uint32_t hitter, uint32_t target, uint3
    push is added, with the spin's share at sp+0x48 and sp+0x50. */
 void rush2049_pea_auto_fire(recomp_context* ctx);
 void rush2049_pea_damage(uint8_t* rdram, recomp_context* ctx);
+/* At the same place: a plasma (type 0) direct hit's push, s2 the record hit and s6 the shooter's. */
+void rush2049_plasma_push(uint8_t* rdram, recomp_context* ctx);
 void rush2049_sonic_boom_forces(recomp_context* ctx);
 void rush2049_sonic_boom_spin(uint8_t* rdram, recomp_context* ctx);
-/* The cooldown bar: in the fire routine as its loop over the players starts (Battle is running), and in
+/* The bouncy ball: in the fire routine's type 2 case as it branches out (s1 the projectile, s7 the record, its
+   velocity's x and y stored, f8 its z); in the projectile routine ovl2_func_8038E114's type 2 flight, f10 the gravity
+   scale about to multiply; and at its bounce, f8 the share of the speed into the surface it keeps, the speed in the
+   surface's frame at sp+0x64. */
+void rush2049_ball_launch(uint8_t* rdram, recomp_context* ctx);
+void rush2049_ball_gravity(recomp_context* ctx);
+void rush2049_ball_bounce(uint8_t* rdram, recomp_context* ctx);
+/* The powerup bars: in the fire routine as its loop over the players starts (Battle is running), and in
    func_800EDACC after the frame's last call is appended, before its full sync and end. */
 void rush2049_battle_frame(void);
 void rush2049_cooldown_bars(uint8_t* rdram);
+/* Invisible arrow: in ovl2_func_8038AA8C once an invisible player's arrow alpha (sp+0x73) is set and floored. */
+void rush2049_invisible_arrow(uint8_t* rdram, recomp_context* ctx);
 
 /* Scenery Culling (src/draw_distance.cpp, us.toml): func_8009EBC0 is given the camera's position, has picked the
    stretch's record, and then tests a word of the scenery visibility mask, the word's byte offset in the record beside

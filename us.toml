@@ -461,9 +461,28 @@ text = "    rush2049_pea_auto_fire(ctx);"
 [[patches.hook]]
 func = "ovl2_func_8038E114"
 before_vram = 0x8038F124
-text = "    rush2049_pea_damage(rdram, ctx);"
+text = "    rush2049_pea_damage(rdram, ctx);\n    rush2049_plasma_push(rdram, ctx);"
 
-# Battle Mode Alt, cooldown bar (src/battle_tuning.cpp): in the fire routine as its loop over the players (count at
+# Battle Mode Alt, bouncy ball (src/battle_tuning.cpp): in the fire routine's type 2 case, at its branch out, with the
+# projectile's lifetime (+0x8) and velocity's x and y (+0x14, +0x18) stored and its z in f8 (the delay slot stores it);
+# in ovl2_func_8038E114's type 2 flight before its gravity times 2.5 (f10); and at its bounce before the speed into the
+# surface (sp+0x68, turned round) is multiplied by 0.9 (f8, from 0x80394E54).
+[[patches.hook]]
+func = "ovl2_func_8038FCE0"
+before_vram = 0x803901BC
+text = "    rush2049_ball_launch(rdram, ctx);"
+
+[[patches.hook]]
+func = "ovl2_func_8038E114"
+before_vram = 0x8038E814
+text = "    rush2049_ball_gravity(ctx);"
+
+[[patches.hook]]
+func = "ovl2_func_8038E114"
+before_vram = 0x8038ED68
+text = "    rush2049_ball_bounce(rdram, ctx);"
+
+# Battle Mode Alt, powerup bars (src/battle_tuning.cpp): in the fire routine as its loop over the players (count at
 # 0x801543CA) starts, which marks Battle as running; and in func_800EDACC after the frame's last call (to the list
 # func_800A48C8 returned) is appended, before its full sync and end, where the bars are appended.
 [[patches.hook]]
@@ -475,6 +494,13 @@ text = "    rush2049_battle_frame();"
 func = "func_800EDACC"
 before_vram = 0x800EDB4C
 text = "    rush2049_cooldown_bars(rdram);"
+
+# Battle Mode Alt, invisible arrow (src/battle_tuning.cpp): in the arrow's colour, reached only while its player is
+# invisible, once the fade alpha (+0x3A1) is stored to sp+0x73 and floored at 0x30, before the colour is set.
+[[patches.hook]]
+func = "ovl2_func_8038AA8C"
+before_vram = 0x8038ABC4
+text = "    rush2049_invisible_arrow(rdram, ctx);"
 
 # Battle Mode Alt, Sonic Boom (src/battle_tuning.cpp): in its impact, once the away (f22) and up (f28) forces are
 # loaded, before the loop over cars; and after a car's push is added to its force, before its x and z (sp+0x48,

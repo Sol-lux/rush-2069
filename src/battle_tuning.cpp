@@ -4,7 +4,10 @@
 //   - machine gun spin-up: the machine gun's refire winds up like a chain gun's;
 //   - Rammer cooldown and push: a longer refire, and a ram shoves its target away along the ground;
 //   - pea shooter: the weapon held with no pickup fires while fire is held and hits a third harder;
-//   - Sonic Boom: more push away from the blast, less lift and less flip.
+//   - Sonic Boom: more push away from the blast, less lift and less flip;
+//   - bouncy ball: its launch speed and angle, lifetime, gravity and bounce, tunable;
+//   - plasma push: a plasma hit shoves the car away from the shooter;
+//   - powerup bars: a bar at the top of each view for each timed powerup, and invisibility hides the arrow.
 //
 // Each Battle player has a record at 0x80152818 + n * 0x3B8 (n 0 for player 1): +0x35B its car's index (the car is
 // 0x8014A250 + index * 0x808), +0x384 the weapon (s8: 8 none, 1 the machine gun), +0x385 its ammo (s8, -1 with no
@@ -47,20 +50,39 @@
 // the car's force (+0x124), and the push's x and z into its spin (+0x13C, +0x144). With Alt the away force is 1.5x,
 // the lift 0.4x and the spin's share 0.3x, so a car is thrown out more and flipped less.
 //
-// Cooldown bar. With Alt, a weapon with a long reload (cooldown_bar_min_reload and up: not the machine gun or the pea
-// shooter) shows a small bar at the bottom of its player's view while the refire timer (+0x3AC) runs, filling until
-// the weapon is ready, and gone then. The reload is the timer's value when it last went up (the fire routine and the
-// Rammer both set it there). Battle counts as running while the fire routine's loop over the players (count at
-// 0x801543CA) has started within the last quarter second, so the bars never show outside it. Each player's view is
+// Bouncy ball. Projectile type 2. The fire routine's case for it (from the jump table at 0x80394EBC on the type) sets
+// its lifetime (+0x8) to 3.1667 s (0x80394EE0), its radius (+0x10) to 15 and its velocity (+0x14) to the aim
+// (+0x50) times 75 (f26) plus the car record's velocity (+0x14). Each frame the projectile routine ovl2_func_8038E114
+// (its flight jump table at 0x80394E20) takes the world's gravity (0x80142764) times the frame time times 2.5 off its
+// fall speed (+0x18) and moves it, with no drag. When it meets the ground, the velocity is turned into the surface's
+// frame (func_800A61B0, to sp+0x64), the speed into it (sp+0x68) turned round and times 0.9 (0x80394E54), and turned
+// back (func_8009E820); the speed along the surface is kept whole. With Alt each of those is a constant to tune
+// a slider on the General tab (config.cpp), at its value as shipped until it is moved.
+//
+// Plasma push. A direct hit of a projectile (ovl2_func_8038E114, s5 the projectile, s2 the car record hit, s6 the
+// shooter's, as the damage routine takes them in a1 and a0) of type 0, the plasma blaster, with Alt adds a flat push
+// from the shooter to the victim (the shot's velocity is zeroed by then) to the hit car's force, as the Rammer's push does.
+//
+// Tuning. The values above come from the Battle Tuning mod's options (battle_tuning_mod/, its sliders in the Mods
+// tab), read once a Battle frame (src/battle_tuning_mod.cpp), and are the defaults in rush2049_game.h without it.
+//
+// Powerup bar. With Alt, a player holding a timed powerup has a bar at the top of its view, in the powerup's colour,
+// emptying as it runs out (both last 30 s; with both, each has half the bar): invisibility (record +0x38C bit 0x1,
+// time left +0x390) and the shield (bit 0x8 while its bubble grows, then 0x4 with time left at +0x394; the
+// timers run in ovl2_func_8038F938). Battle counts as running while the fire routine's loop over the players (count
+// at 0x801543CA) has started within the last quarter second, so the bars never show outside it. Each player's view is
 // found in the frame's top-level list as the game wrote it: a viewport, a pipe sync and the view's scissor, the views
 // in player order. The bars are fill rectangles appended at the end of the frame's list, after the HUD's call and
 // before its full sync and end (func_800EDACC), with their own fill mode and a full-screen scissor; the frame's next
-// list sets its own modes. cooldown_fill is pure; the test checks it.
+// list sets its own modes. powerup_fills is pure; the test checks it.
+//
+// Invisible arrow. With Alt, an invisible player's arrow is hidden outright, not left at the game's faint floor.
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 #include "recomp.h"
@@ -82,12 +104,21 @@ struct Spin {
 };
 Spin spins[max_players];
 
-struct Cooldown {
-    float last_timer = 0.0f;
-    float reload = 0.0f;
-};
-Cooldown cooldowns[max_players];
 std::atomic<double> battle_seen{ -1.0 };
+
+std::atomic<float> tunings[rush2049::tuning_count];
+
+struct TuningInit {
+    TuningInit() {
+        for (int i = 0; i < rush2049::tuning_count; i++) {
+            tunings[i].store(rush2049::tuning_defaults[i]);
+        }
+    }
+} tuning_init;
+
+float ball_value(rush2049::Tuning which) {
+    return tunings[which].load(std::memory_order_relaxed);
+}
 
 double now_seconds() {
     static const auto start = std::chrono::steady_clock::now();
@@ -112,20 +143,9 @@ float rush2049::spin_interval(float level) {
 }
 
 void rush2049::rammer_push(const float target[3], const float hitter[3], const float matrix[9], float speed,
-                           float out[3]) {
-    float v[3] = { target[0] - hitter[0], 0.0f, target[2] - hitter[2] };
-    float length = std::sqrt(v[0] * v[0] + v[2] * v[2]);
-    if (length <= 0.0f) {
-        out[0] = out[1] = out[2] = 0.0f;
-        return;
-    }
+                           float force, float out[3]) {
     float scale = std::clamp(speed / rammer_push_reference_speed, rammer_push_min_scale, rammer_push_max_scale);
-    float force = rammer_push_force * scale / length;
-    v[0] *= force;
-    v[2] *= force;
-    for (int i = 0; i < 3; i++) {
-        out[i] = matrix[i * 3] * v[0] + matrix[i * 3 + 1] * v[1] + matrix[i * 3 + 2] * v[2];
-    }
+    flat_push(target[0] - hitter[0], target[2] - hitter[2], matrix, force * scale, out);
 }
 
 float rush2049::rammer_damage(float speed) {
@@ -201,7 +221,8 @@ extern "C" void rush2049_rammer_hit(uint8_t* rdram, uint32_t hitter, uint32_t ta
         matrix[i] = read_float(rdram, target + 0x2C + i * 4);
     }
     float push[3];
-    rush2049::rammer_push(target_pos, hitter_pos, matrix, read_float(rdram, hitter_car + 0x3F0), push);
+    rush2049::rammer_push(target_pos, hitter_pos, matrix, read_float(rdram, hitter_car + 0x3F0),
+                          rush2049::tuning(rush2049::rammer_push_force), push);
     int8_t car_index = (int8_t)MEM_B(0x35B, (gpr)(int32_t)target);
     if (car_index < 0 || car_index >= max_players) {
         return;
@@ -219,6 +240,30 @@ int rush2049::pea_damage(int damage) {
 extern "C" void rush2049_pea_auto_fire(recomp_context* ctx) {
     if (alt.load() && (int32_t)ctx->r2 == 8) {
         ctx->r1 = 8;  // the held check that follows is for weapon at, so weapon 8 passes it
+    }
+}
+
+extern "C" void rush2049_plasma_push(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t victim = (uint32_t)ctx->r18, shooter = (uint32_t)ctx->r22;
+    if (!alt.load() || (int8_t)MEM_B(6, ctx->r21) != 0 || !is_record(victim) || victim == shooter) {
+        return;
+    }
+    float matrix[9];
+    for (int i = 0; i < 9; i++) {
+        matrix[i] = read_float(rdram, victim + 0x2C + i * 4);
+    }
+    float push[3];
+    // The shot's velocity is already zeroed at the hit, so the push runs from the shooter to the victim.
+    rush2049::flat_push(read_float(rdram, victim + 0x8) - read_float(rdram, shooter + 0x8),
+                        read_float(rdram, victim + 0x10) - read_float(rdram, shooter + 0x10), matrix,
+                        rush2049::tuning(rush2049::plasma_push), push);
+    int8_t car_index = (int8_t)MEM_B(0x35B, (gpr)(int32_t)victim);
+    if (car_index < 0 || car_index >= max_players) {
+        return;
+    }
+    uint32_t car = 0x8014A250 + (uint32_t)car_index * 0x808;
+    for (int i = 0; i < 3; i++) {
+        write_float(rdram, car + 0x124 + i * 4, read_float(rdram, car + 0x124 + i * 4) + push[i]);
     }
 }
 
@@ -243,15 +288,16 @@ extern "C" void rush2049_sonic_boom_spin(uint8_t* rdram, recomp_context* ctx) {
     }
 }
 
-float rush2049::cooldown_fill(float timer, float reload) {
-    if (reload <= 0.0f) {
-        return 1.0f;
-    }
-    return std::clamp(1.0f - timer / reload, 0.0f, 1.0f);
+void rush2049::powerup_fills(uint32_t flags, float invisible_left, float shield_left, float out[powerup_count]) {
+    out[powerup_invisibility] = (flags & 0x1) ? std::clamp(invisible_left / powerup_seconds, 0.0f, 1.0f) : -1.0f;
+    out[powerup_shield] = (flags & 0x8)   ? 1.0f
+                          : (flags & 0x4) ? std::clamp(shield_left / powerup_seconds, 0.0f, 1.0f)
+                                          : -1.0f;
 }
 
 extern "C" void rush2049_battle_frame(void) {
     battle_seen.store(now_seconds());
+    rush2049::poll_battle_tuning();
 }
 
 namespace {
@@ -314,20 +360,14 @@ extern "C" void rush2049_cooldown_bars(uint8_t* rdram) {
         return;
     }
     int players = std::clamp((int)(int16_t)MEM_H(0, (gpr)(int32_t)player_count_addr), 0, max_players);
-    float fills[max_players];
+    float fills[max_players][rush2049::powerup_count];
     bool any = false;
     for (int i = 0; i < players; i++) {
         uint32_t record = players_base + (uint32_t)i * player_size;
-        float timer = read_float(rdram, record + 0x3AC);
-        Cooldown& c = cooldowns[i];
-        if (timer > c.last_timer + 0.001f) {
-            c.reload = timer;
-        }
-        c.last_timer = timer;
-        fills[i] = -1.0f;
-        if (timer > 0.0f && c.reload >= rush2049::cooldown_bar_min_reload) {
-            fills[i] = rush2049::cooldown_fill(timer, c.reload);
-            any = true;
+        rush2049::powerup_fills((uint32_t)MEM_W(0, (gpr)(int32_t)(record + 0x38C)), read_float(rdram, record + 0x390),
+                                read_float(rdram, record + 0x394), fills[i]);
+        for (int k = 0; k < rush2049::powerup_count; k++) {
+            any |= fills[i][k] >= 0.0f;
         }
     }
     if (!any) {
@@ -342,17 +382,104 @@ extern "C" void rush2049_cooldown_bars(uint8_t* rdram) {
     put(rdram, p, 0xE200001C, 0);           // gsDPSetRenderMode(0, 0)
     put(rdram, p, 0xED000000, (320u * 4 << 12) | 240u * 4);  // gsDPSetScissor, the whole screen
     for (int i = 0; i < players && i < view_count; i++) {
-        if (fills[i] < 0.0f) {
-            continue;
-        }
         const Rect& v = views[i];
         int x0 = (v.x0 + v.x1 - rush2049::cooldown_bar_width) / 2;
-        int y1 = v.y1 - rush2049::cooldown_bar_bottom_gap;
-        Rect back{ x0 - 1, y1 - rush2049::cooldown_bar_height - 1, x0 + rush2049::cooldown_bar_width + 1, y1 + 1 };
-        Rect bar{ x0, y1 - rush2049::cooldown_bar_height, x0 + (int)(rush2049::cooldown_bar_width * fills[i] + 0.5f),
-                  y1 };
-        fill(rdram, p, back, fill_colour(2, 2, 2));
-        fill(rdram, p, bar, fill_colour(31, 20, 0));
+        int y0 = v.y0 + rush2049::cooldown_bar_top_gap;
+        int held = 0;
+        for (int k = 0; k < rush2049::powerup_count; k++) {
+            held += fills[i][k] >= 0.0f;
+        }
+        if (held == 0) {
+            continue;
+        }
+        int width = (rush2049::cooldown_bar_width - (held - 1) * 2) / held;  // a 2 px gap between halves
+        for (int k = 0; k < rush2049::powerup_count; k++) {
+            if (fills[i][k] < 0.0f) {
+                continue;
+            }
+            Rect back{ x0 - 1, y0 - 1, x0 + width + 1, y0 + rush2049::cooldown_bar_height + 1 };
+            Rect bar{ x0, y0, x0 + (int)(width * fills[i][k] + 0.5f), y0 + rush2049::cooldown_bar_height };
+            const int* c = rush2049::powerup_colours[k];
+            fill(rdram, p, back, fill_colour(2, 2, 2));
+            fill(rdram, p, bar, fill_colour(c[0], c[1], c[2]));
+            x0 += width + 2;
+        }
     }
     MEM_W(0, (gpr)(int32_t)dl_head_addr) = (int32_t)p;
+}
+
+// Invisibility hides the arrow: the arrow's colour takes the record's fade alpha (+0x3A1) but never below 0x30
+// (ovl2_func_8038AA8C, sp+0x73); with Alt it is 0 while the record is invisible.
+extern "C" void rush2049_invisible_arrow(uint8_t* rdram, recomp_context* ctx) {
+    if (alt.load()) {
+        MEM_B(0x73, ctx->r29) = 0;
+    }
+}
+
+void rush2049::set_tuning(Tuning which, float value) {
+    if (which >= 0 && which < tuning_count) {
+        tunings[which].store(value, std::memory_order_relaxed);
+    }
+}
+
+float rush2049::tuning(Tuning which) {
+    return tunings[which].load(std::memory_order_relaxed);
+}
+
+void rush2049::flat_push(float dx, float dz, const float matrix[9], float force, float out[3]) {
+    float length = std::sqrt(dx * dx + dz * dz);
+    if (length <= 0.0f) {
+        out[0] = out[1] = out[2] = 0.0f;
+        return;
+    }
+    float v[3] = { dx * force / length, 0.0f, dz * force / length };
+    for (int i = 0; i < 3; i++) {
+        out[i] = matrix[i * 3] * v[0] + matrix[i * 3 + 1] * v[1] + matrix[i * 3 + 2] * v[2];
+    }
+}
+
+void rush2049::tilt_up(const float aim[3], float degrees, float out[3]) {
+    float up[3] = { -aim[1] * aim[0], 1.0f - aim[1] * aim[1], -aim[1] * aim[2] };  // y less its part along the aim
+    float length = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+    if (degrees == 0.0f || length < 1e-4f) {
+        out[0] = aim[0], out[1] = aim[1], out[2] = aim[2];
+        return;
+    }
+    float a = degrees * 3.14159265f / 180.0f, c = std::cos(a), sn = std::sin(a) / length;
+    for (int i = 0; i < 3; i++) {
+        out[i] = aim[i] * c + up[i] * sn;
+    }
+}
+
+extern "C" void rush2049_ball_launch(uint8_t* rdram, recomp_context* ctx) {
+    if (!alt.load()) {
+        return;
+    }
+    uint32_t ball = (uint32_t)ctx->r17, record = (uint32_t)ctx->r23;
+    write_float(rdram, ball + 0x8, ball_value(rush2049::ball_lifetime));
+    float aim[3], dir[3];
+    for (int i = 0; i < 3; i++) {
+        aim[i] = read_float(rdram, ball + 0x50 + i * 4);
+    }
+    rush2049::tilt_up(aim, ball_value(rush2049::ball_angle), dir);
+    float speed = ball_value(rush2049::ball_launch_speed);
+    write_float(rdram, ball + 0x14, dir[0] * speed + read_float(rdram, record + 0x14));
+    write_float(rdram, ball + 0x18, dir[1] * speed + read_float(rdram, record + 0x18));
+    ctx->f8.fl = dir[2] * speed + read_float(rdram, record + 0x1C);
+}
+
+extern "C" void rush2049_ball_gravity(recomp_context* ctx) {
+    if (alt.load()) {
+        ctx->f10.fl = ball_value(rush2049::ball_gravity_scale);
+    }
+}
+
+extern "C" void rush2049_ball_bounce(uint8_t* rdram, recomp_context* ctx) {
+    if (!alt.load()) {
+        return;
+    }
+    ctx->f8.fl = ball_value(rush2049::ball_bounce_up);
+    uint32_t sp = (uint32_t)ctx->r29;
+    write_float(rdram, sp + 0x64, read_float(rdram, sp + 0x64) * ball_value(rush2049::ball_bounce_along));
+    write_float(rdram, sp + 0x6C, read_float(rdram, sp + 0x6C) * ball_value(rush2049::ball_bounce_along));
 }

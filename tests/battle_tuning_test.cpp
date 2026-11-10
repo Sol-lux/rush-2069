@@ -43,10 +43,12 @@ void set_reload(uint8_t* rdram, float f) {
 
 } // namespace
 
-// battle_tuning.cpp's cooldown bars read the frame's list; the test never draws them.
+// battle_tuning.cpp's powerup bars read the frame's list; the test never draws them.
 uint32_t rush2049::frame_list_current(uint8_t*) {
     return 0;
 }
+// And reads the mod's options (src/battle_tuning_mod.cpp), which the test has none of.
+void rush2049::poll_battle_tuning() {}
 
 int main() {
     // Damage.
@@ -99,18 +101,18 @@ int main() {
         const float hitter[3] = { 0, 0, 0 };
         const float ahead_up[3] = { 10, 50, 0 };
         float out[3];
-        rush2049::rammer_push(ahead_up, hitter, identity, rush2049::rammer_push_reference_speed, out);
-        check(near(out[0], rush2049::rammer_push_force) && out[1] == 0.0f && out[2] == 0.0f, "ram push is flat, full at the reference speed");
-        rush2049::rammer_push(ahead_up, hitter, identity, 0.0f, out);
-        check(near(out[0], rush2049::rammer_push_force * rush2049::rammer_push_min_scale), "ram push at rest is the minimum");
-        rush2049::rammer_push(ahead_up, hitter, identity, 1000.0f, out);
-        check(near(out[0], rush2049::rammer_push_force * rush2049::rammer_push_max_scale), "ram push is capped");
+        rush2049::rammer_push(ahead_up, hitter, identity, rush2049::rammer_push_reference_speed, 800000.0f, out);
+        check(near(out[0], 800000.0f) && out[1] == 0.0f && out[2] == 0.0f, "ram push is flat, full at the reference speed");
+        rush2049::rammer_push(ahead_up, hitter, identity, 0.0f, 800000.0f, out);
+        check(near(out[0], 800000.0f * rush2049::rammer_push_min_scale), "ram push at rest is the minimum");
+        rush2049::rammer_push(ahead_up, hitter, identity, 1000.0f, 800000.0f, out);
+        check(near(out[0], 800000.0f * rush2049::rammer_push_max_scale), "ram push is capped");
         const float turn[9] = { 0, 0, 1, 0, 1, 0, -1, 0, 0 };  // out_i = row_i . v
-        rush2049::rammer_push(ahead_up, hitter, turn, rush2049::rammer_push_reference_speed, out);
-        check(near(out[0], 0.0f) && near(out[2], -rush2049::rammer_push_force), "ram push is rotated into the target's frame");
+        rush2049::rammer_push(ahead_up, hitter, turn, rush2049::rammer_push_reference_speed, 800000.0f, out);
+        check(near(out[0], 0.0f) && near(out[2], -800000.0f), "ram push is rotated into the target's frame");
         check(near(rush2049::rammer_damage(80.0f), 600.0f), "ram damage 200 + 5 x speed");
         const float same[3] = { 0, 5, 0 };
-        rush2049::rammer_push(same, hitter, identity, 80.0f, out);
+        rush2049::rammer_push(same, hitter, identity, 80.0f, 800000.0f, out);
         check(out[0] == 0.0f && out[1] == 0.0f && out[2] == 0.0f, "no push with no ground distance");
     }
 
@@ -170,10 +172,29 @@ int main() {
         check(near(x, 3.0f) && near(z, 3.0f), "Alt Sonic Boom spin share");
     }
 
-    check(rush2049::cooldown_fill(1.0f, 1.0f) == 0.0f, "just fired: empty");
-    check(near(rush2049::cooldown_fill(0.25f, 1.0f), 0.75f), "a quarter left: three quarters full");
-    check(rush2049::cooldown_fill(0.0f, 1.0f) == 1.0f, "ready: full");
-    check(rush2049::cooldown_fill(0.5f, 0.0f) == 1.0f, "no reload seen: full");
+    {
+        float aim[3] = { 1.0f, 0.0f, 0.0f }, out[3];
+        rush2049::tilt_up(aim, 0.0f, out);
+        check(out[0] == 1.0f && out[1] == 0.0f, "no tilt keeps the aim");
+        rush2049::tilt_up(aim, 30.0f, out);
+        check(near(out[0], 0.8660254f) && near(out[1], 0.5f) && near(out[2], 0.0f), "30 degrees up");
+        float identity[9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+        rush2049::flat_push(3.0f, 4.0f, identity, 10.0f, out);
+        check(near(out[0], 6.0f) && out[1] == 0.0f && near(out[2], 8.0f), "flat push along the shot");
+    }
+    {
+        float f[rush2049::powerup_count];
+        rush2049::powerup_fills(0, 30.0f, 30.0f, f);
+        check(f[0] < 0.0f && f[1] < 0.0f, "no powerups: no bars");
+        rush2049::powerup_fills(0x1, 7.5f, 0.0f, f);
+        check(near(f[0], 0.25f) && f[1] < 0.0f, "invisible, a quarter left");
+        rush2049::powerup_fills(0x2 | 0x8, 0.0f, 0.0333f, f);
+        check(f[0] < 0.0f && f[1] == 1.0f, "shield growing: full");
+        rush2049::powerup_fills(0x2 | 0x4, 0.0f, 15.0f, f);
+        check(near(f[1], 0.5f), "shield, half left");
+        rush2049::powerup_fills(0x2 | 0x10, 0.0f, 0.0f, f);
+        check(f[1] < 0.0f, "shield shrinking: gone");
+    }
 
     std::printf(failures == 0 ? "battle tuning: all passed\n" : "battle tuning: %d failed\n", failures);
     return failures == 0 ? 0 : 1;

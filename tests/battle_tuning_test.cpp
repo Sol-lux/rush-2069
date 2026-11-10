@@ -1,7 +1,7 @@
 // Battle Mode Alt (src/battle_tuning.cpp) checks, run by CI: at Original the damage and the machine gun's reload are
 // left alone; Alt halves damage, rounding up, pushes a rammed car flat away from the rammer, lets the pea shooter fire
 // while held and hit a third harder, scales the Sonic Boom's push and spin, and the machine gun fires 5 rounds a second from rest,
-// reaches 30 after 1.5 s of fire held, keeps its spin through a let-go of up to 20 frames and loses it over 1.5 s after.
+// reaches 30 after 3 s of fire held, keeps its spin through a let-go of up to 20 frames and loses it over 1.5 s after.
 
 #include <cmath>
 #include <cstdio>
@@ -75,7 +75,7 @@ int main() {
         held += interval;
         interval = rush2049::spin_interval(level);
     }
-    check(std::fabs(held - 1.5f) < 0.25f, "full spin after about 1.5 s held");
+    check(std::fabs(held - 3.0f) < 0.25f, "full spin after about 3 s held");
     check(near(rush2049::spin_after_shot(1.0f, 1.0f / 30.0f + 20.0f / 60.0f, 1.0f / 30.0f), 1.0f),
         "a let-go of 20 frames keeps full spin");
     check(near(rush2049::spin_after_shot(1.0f, 1.0f / 30.0f + 20.0f / 60.0f + 0.75f, 1.0f / 30.0f), 0.5f),
@@ -136,9 +136,20 @@ int main() {
         rush2049_pea_damage(rdram, &c);
         check(c.r16 == 107, "pea shooter hit hook");
         MEM_B(6, (gpr)(int32_t)projectile) = 2;
-        c.r16 = 80;
+        c.r16 = 800;
         rush2049_pea_damage(rdram, &c);
-        check(c.r16 == 80, "other projectiles keep their damage");
+        check(c.r16 == 600, "bouncy ball direct 800 to 600");
+        MEM_B(6, (gpr)(int32_t)projectile) = 6;
+        c.r16 = 520;
+        rush2049_pea_damage(rdram, &c);
+        check(c.r16 == 520, "other projectiles keep their damage");
+        check(rush2049::direct_damage(1, 114) == 80, "machine gun 114 to 80");
+        check(rush2049::direct_damage(4, 960) == 1320, "heavy rocket 960 to 1320");
+        check(rush2049::direct_damage(4, 336) == 462, "heavy rocket on armour keeps its share");
+        check(rush2049::splash_damage(2, 800) == 500, "ball splash 800 to 500");
+        check(rush2049::splash_damage(4, 960) == 1000, "heavy splash 960 to 1000");
+        check(rush2049::splash_damage(1, 114) == 114, "machine gun has no splash change");
+        check(rush2049::splash_damage(6, 520) == 520, "light missile splash kept");
         rush2049::set_battle_mode_alt(false);
         c.r2 = 8;
         c.r1 = 1;

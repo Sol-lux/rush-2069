@@ -57,6 +57,9 @@ namespace rush2049 {
     void sync_replay(const char* path);
     void sync_hash(const char* path);
     void sync_dump(const char* prefix, const char* reads);
+    // The frame lock (src/frame_lock.cpp): --frame-lock, one frame of the frame loop for each step, 1/60 s each.
+    void set_frame_lock(bool on);
+    bool frame_lock();
     // Whether the last frame the game drew was split screen (src/widescreen.cpp).
     bool split_screen();
 
@@ -81,7 +84,7 @@ namespace rush2049 {
     void set_battle_mode_alt(bool on);
     constexpr float spin_min_rate = 5.0f;      // rounds a second from rest
     constexpr float spin_max_rate = 30.0f;     // at full spin
-    constexpr float spin_up_seconds = 1.5f;    // held, from rest to full
+    constexpr float spin_up_seconds = 3.0f;    // held, from rest to full
     constexpr float spin_hold_seconds = 20.0f / 60.0f;  // released, before it spins down
     constexpr float spin_down_seconds = 1.5f;  // from full to rest
     // The spin level after a shot, from the level at the last one, the seconds since it (negative: the first) and the
@@ -106,6 +109,20 @@ namespace rush2049 {
     constexpr int pea_damage_num = 4;
     constexpr int pea_damage_den = 3;
     int pea_damage(int damage);
+    // Battle Mode Alt's damage by projectile type (+6), before double health halves it: a direct hit's and a splash's
+    // base, as shipped 1 the machine gun 114, 2 the bouncy ball 800 (splash 800), 4 the heavy rocket 960 (splash 960),
+    // 8 the pea shooter 80 (pea_damage). The game's damage for the type (after its armour scaling) goes in; it comes
+    // out scaled to these, or unchanged for a type not listed.
+    constexpr int machine_gun_damage = 80;
+    constexpr int ball_damage = 600;
+    constexpr int ball_splash = 500;
+    constexpr int heavy_damage = 1320;
+    constexpr int heavy_splash = 1000;
+    int direct_damage(int type, int damage);
+    int splash_damage(int type, int damage);
+    // A mine's 800 (not the 280 to a Rammer meeting it head-on), and the plasma blaster's refire (as shipped 0.1667 s).
+    constexpr int mine_damage = 1600;
+    constexpr float plasma_refire_seconds = 60.0f / 420.0f;
     // Battle Mode Alt's Sonic Boom: its impact's push away from the blast (330000), up (66000), and the share of the
     // push that goes into the car's spin, which is what flips it, each times these.
     constexpr float sonic_out_scale = 1.5f;

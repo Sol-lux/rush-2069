@@ -7,6 +7,8 @@
 //   - Sonic Boom: more push away from the blast, less lift and less flip;
 //   - bouncy ball: its launch speed and angle, lifetime, gravity and bounce, tunable;
 //   - plasma push: a plasma hit shoves the car away from the shooter;
+//   - damage and refire: the machine gun, bouncy ball and heavy rocket's direct and splash damage, the mine's damage
+//     and the plasma blaster's refire;
 //   - powerup bars: a bar at the top of each view for each timed powerup, and invisibility hides the arrow.
 //
 // Each Battle player has a record at 0x80152818 + n * 0x3B8 (n 0 for player 1): +0x35B its car's index (the car is
@@ -24,7 +26,7 @@
 // 0, 2, 6 and 8 0.1667 s, 4 and 7 1 s, 1 the machine gun 0.0667 s from 0x80394EE4, so 15 rounds a second). With
 // Alt the machine gun's reload follows a spin level s from 0 to 1, 1 / (5 + 25 s): 5 rounds a second from rest and
 // 30 at full spin. The level is worked out at each shot from the time since the last: a gap no longer than the last
-// reload plus the hold time (20 frames at 60 fps) counts as fire held and spins up by the gap over 1.5 s; a longer
+// reload plus the hold time (20 frames at 60 fps) counts as fire held and spins up by the gap over 3 s; a longer
 // one spins down by what passed the hold over 1.5 s. Its time is the host's, so a pause spins the gun down.
 // spin_after_shot is pure; tests/battle_tuning_test.cpp checks it.
 //
@@ -62,6 +64,14 @@
 // Plasma push. A direct hit of a projectile (ovl2_func_8038E114, s5 the projectile, s2 the car record hit, s6 the
 // shooter's, as the damage routine takes them in a1 and a0) of type 0, the plasma blaster, with Alt adds a flat push
 // from the shooter to the victim (the shot's velocity is zeroed by then) to the hit car's force, as the Rammer's push does.
+//
+// Damage and refire. ovl2_func_8038E114 sets a projectile's damage (s0) by its type as immediates (0 400, 1 114,
+// 2 800, 3 and 4 960, 6 520, 8 80) and uses it for a direct hit (0x8038F154, after the armour's 0.35) and as the base
+// of a splash (ovl2_func_8038D798, falling off as (1 - d^2/900)^2, the base passed at sp+0x10). With Alt the direct
+// hit hook and one before each splash call (0x8038ECD4, 0x8038F0D4, 0x8038F0F0, 0x8038F1B4, 0x8038F1D0) scale s0 to
+// the table in rush2049_game.h. A mine's hit (func_8010C7F4) does 800, or 280 to a Rammer meeting it head-on; with
+// Alt the 800 is mine_damage. The plasma blaster's case of the fire routine (0x803902DC) sets its refire to 0.1667 s
+// (f24); with Alt it is plasma_refire_seconds. direct_damage and splash_damage are pure; the test checks them.
 //
 // Tuning. The values above come from the Battle Tuning mod's options (battle_tuning_mod/, its sliders in the Mods
 // tab), read once a Battle frame (src/battle_tuning_mod.cpp), and are the defaults in rush2049_game.h without it.
@@ -267,9 +277,66 @@ extern "C" void rush2049_plasma_push(uint8_t* rdram, recomp_context* ctx) {
     }
 }
 
+namespace {
+
+// A type's damage as shipped and with Alt, direct and splash; 0 where Alt leaves it.
+struct Damage { int type, shipped, direct, splash; };
+constexpr Damage damages[] = {
+    { 1, 114, rush2049::machine_gun_damage, 0 },
+    { 2, 800, rush2049::ball_damage, rush2049::ball_splash },
+    { 4, 960, rush2049::heavy_damage, rush2049::heavy_splash },
+};
+
+int scaled(int damage, int shipped, int to) {
+    return to == 0 ? damage : (damage * to + shipped / 2) / shipped;
+}
+
+} // namespace
+
+int rush2049::direct_damage(int type, int damage) {
+    if (type == 8) {
+        return pea_damage(damage);
+    }
+    for (const Damage& d : damages) {
+        if (d.type == type) {
+            return scaled(damage, d.shipped, d.direct);
+        }
+    }
+    return damage;
+}
+
+int rush2049::splash_damage(int type, int damage) {
+    for (const Damage& d : damages) {
+        if (d.type == type) {
+            return scaled(damage, d.shipped, d.splash);
+        }
+    }
+    return damage;
+}
+
+// A direct hit: s0 the damage (after the armour's 0.35), s5 the projectile.
 extern "C" void rush2049_pea_damage(uint8_t* rdram, recomp_context* ctx) {
-    if (alt.load() && (int8_t)MEM_B(6, ctx->r21) == 8) {
-        ctx->r16 = (gpr)(int64_t)rush2049::pea_damage((int32_t)ctx->r16);
+    if (alt.load()) {
+        ctx->r16 = (gpr)(int64_t)rush2049::direct_damage((int8_t)MEM_B(6, ctx->r21), (int32_t)ctx->r16);
+    }
+}
+
+// A splash: s0 the base it is passed, s5 the projectile.
+extern "C" void rush2049_splash_damage(uint8_t* rdram, recomp_context* ctx) {
+    if (alt.load()) {
+        ctx->r16 = (gpr)(int64_t)rush2049::splash_damage((int8_t)MEM_B(6, ctx->r21), (int32_t)ctx->r16);
+    }
+}
+
+extern "C" void rush2049_mine_damage(recomp_context* ctx) {
+    if (alt.load()) {
+        ctx->r6 = (gpr)(int64_t)rush2049::mine_damage;
+    }
+}
+
+extern "C" void rush2049_plasma_refire(uint8_t* rdram, recomp_context* ctx) {
+    if (alt.load()) {
+        write_float(rdram, (uint32_t)ctx->r23 + 0x3AC, rush2049::plasma_refire_seconds);
     }
 }
 
@@ -408,11 +475,15 @@ extern "C" void rush2049_cooldown_bars(uint8_t* rdram) {
     MEM_W(0, (gpr)(int32_t)dl_head_addr) = (int32_t)p;
 }
 
-// Invisibility hides the arrow: the arrow's colour takes the record's fade alpha (+0x3A1) but never below 0x30
-// (ovl2_func_8038AA8C, sp+0x73); with Alt it is 0 while the record is invisible.
+// Invisibility hides the arrow: the player marker (func_8008C884) takes the record's fade alpha (+0x3A1) but never
+// below 0x20, so it stays in view; with Alt its alpha (sp+0x73) is 0 while the record (v0) has invisibility (bit 0x1
+// of +0x38C) and is not fading back in (+0x3A2 state 2), so it fades back in with the car.
 extern "C" void rush2049_invisible_arrow(uint8_t* rdram, recomp_context* ctx) {
     if (alt.load()) {
-        MEM_B(0x73, ctx->r29) = 0;
+        gpr record = ctx->r2;
+        if ((MEM_W(0x38C, record) & 1) && MEM_B(0x3A2, record) != 2) {
+            MEM_B(0x73, ctx->r29) = 0;
+        }
     }
 }
 

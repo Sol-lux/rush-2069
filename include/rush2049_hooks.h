@@ -78,6 +78,12 @@ void rush2049_rammer_hit(uint8_t* rdram, uint32_t hitter, uint32_t target, uint3
    push is added, with the spin's share at sp+0x48 and sp+0x50. */
 void rush2049_pea_auto_fire(recomp_context* ctx);
 void rush2049_pea_damage(uint8_t* rdram, recomp_context* ctx);
+/* Splash base: in ovl2_func_8038E114 before each call to the splash routine, s0 the base, s5 the projectile. */
+void rush2049_splash_damage(uint8_t* rdram, recomp_context* ctx);
+/* Mine: in func_8010C7F4 before the damage routine is called with a2 800. */
+void rush2049_mine_damage(recomp_context* ctx);
+/* Plasma refire: in the fire routine's type 0 case once its refire (s7 + 0x3AC) is set. */
+void rush2049_plasma_refire(uint8_t* rdram, recomp_context* ctx);
 /* At the same place: a plasma (type 0) direct hit's push, s2 the record hit and s6 the shooter's. */
 void rush2049_plasma_push(uint8_t* rdram, recomp_context* ctx);
 void rush2049_sonic_boom_forces(recomp_context* ctx);
@@ -93,7 +99,7 @@ void rush2049_ball_bounce(uint8_t* rdram, recomp_context* ctx);
    func_800EDACC after the frame's last call is appended, before its full sync and end. */
 void rush2049_battle_frame(void);
 void rush2049_cooldown_bars(uint8_t* rdram);
-/* Invisible arrow: in ovl2_func_8038AA8C once an invisible player's arrow alpha (sp+0x73) is set and floored. */
+/* Invisible arrow: in func_8008C884 once a player marker's colour and alpha (sp+0x70..0x73) are set, v0 its record. */
 void rush2049_invisible_arrow(uint8_t* rdram, recomp_context* ctx);
 
 /* Scenery Culling (src/draw_distance.cpp, us.toml): func_8009EBC0 is given the camera's position, has picked the
@@ -115,6 +121,12 @@ void rush2049_rewind_frame_draw(uint8_t* rdram, recomp_context* ctx);
 
 /* The sync probe (src/sync_probe.cpp): after thread 5 reads the controllers, the four OSContPads it read. */
 void rush2049_sync_pads(uint8_t* rdram, gpr pads_addr);
+
+/* The frame lock (src/frame_lock.cpp): thread 5 before it reads the controllers, thread 7 at its wait for a frame,
+   and the retraces a frame counts, which the lock makes 1. */
+void rush2049_frame_lock_step(uint8_t* rdram);
+void rush2049_frame_lock_frame(uint8_t* rdram);
+uint32_t rush2049_frame_lock_retraces(uint32_t retraces);
 
 /* Save Ghosts (src/controller_pak.cpp): at the end of a Ghost Race, before the game checks whether to offer
    SAVE GHOST. */

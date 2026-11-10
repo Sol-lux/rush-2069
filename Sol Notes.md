@@ -37,23 +37,28 @@ Changes are ==highlighted==. On top of these, every hit is halved (Double Health
 
 ### Snapshot 2wip
 
-| #   | Weapon              | Ammo | Damage                                                        | Rate (rpm)                                                                                                                            | Lock-on                                          |
-| --- | ------------------- | ---- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| 8   | Pea shooter         | ∞    | ==107 direct (+33%)==                                         | 360, ==auto fire while held==                                                                                                         | yes                                              |
-| 1   | Machine gun         | 100  | 114 {80}                                                      | ==300 from rest, spins up to 1800 over 1.5 s held== {spin up 3s, spin down 1.5s; may need a whir up and down sound to help indicate.} | yes                                              |
-| 6   | Light missile       | 20   | 520 / splash 520                                              | 360                                                                                                                                   | yes                                              |
-| 0   | Plasma blaster      | 20   | 400 {push 400000 away from the shooter (slider)}              | 360 {420}                                                                                                                             | yes in the code                                  |
-| 3   | Mines               | 3    | 800 on touch                                                  | one drop a press                                                                                                                      | n/a                                              |
-| 5   | Rammer              | 5    | ==200 + 5 × speed; push 800000 at speed 80 (200000-1000000)== | ==60 max (1 s)==                                                                                                                      | n/a; ==pushes the target away along the ground== |
-| 2   | Bouncy ball         | 20   | 800 / splash 800 {600 / 500}                                  | 360                                                                                                                                   | no                                               |
-| 7   | Sonic Boom          | 5    | 800 / 400 / 200; ==push 1.5× out, 0.4× up, flip 0.45×==       | 60                                                                                                                                    | no                                               |
-| 4   | Heavy 3-shot rocket | 3    | 960 / splash 960 {1320 / 1000}                                | 60                                                                                                                                    | no                                               |
+| #   | Weapon              | Ammo | Damage                                                        | Rate (rpm)                                                                                                               | Lock-on                                          |                                                  |
+| --- | ------------------- | ---- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ | ------------------------------------------------ |
+| 8   | Pea shooter         | ∞    | ==107 direct (+33%)==                                         | 360, ==auto fire while held==                                                                                            | yes                                              |                                                  |
+| 1   | Machine gun         | 100  | ==80==                                                        | ==300 from rest, spins up to 1800 over 3 s held, down over 1.5 s== {may need a whir up and down sound to help indicate.} | yes                                              |                                                  |
+| 6   | Light missile       | 20   | 520 / splash 520                                              | 360                                                                                                                      | yes                                              |                                                  |
+| 0   | Plasma blaster      | 20   | 400; ==push away from the shooter (slider, 620000 played)==   | ==420== {Auto fire}                                                                                                      | yes in the code                                  |                                                  |
+| 3   | Mines               | 3    | ==1600 on touch== (280 to a head-on Rammer)                   | one drop a press                                                                                                         | n/a                                              |                                                  |
+| 5   | Rammer              | 5    | ==200 + 5 × speed; push 800000 at speed 80 (200000-1000000)== | ==60 max (1 s)==<br>{What if circle used a charge and gave a boost? }                                                    | n/a; ==pushes the target away along the ground== |                                                  |
+| 2   | Bouncy ball         | 20   | ==600 / splash 500== {680, 600}                               | 360                                                                                                                      | no                                               | {The trail is offset by ball's radius sometimes} |
+| 7   | Sonic Boom          | 5    | 800 / 400 / 200; ==push 1.5× out, 0.4× up, flip 0.45×==       | 60                                                                                                                       | no                                               |                                                  |
+| 4   | Heavy 3-shot rocket | 3    | ==1320 / splash 1000==                                        | 60                                                                                                                       | no                                               |                                                  |
+{Snapshot 1 was supposed to get a 'Vulnerability timer' for a flipped car, instead of instantly exploding, you get a cooldown before actually exploding, allowing an enemy to finish you off. This carries to Snapshot 2}
+
+| Other changes |                      |                           |                            |     |     |
+| ------------- | -------------------- | ------------------------- | -------------------------- | --- | --- |
+| Powerups      | - added cooldown bar | {increase spawn rate 15%} | {make new spawn locations} |     |     |
 # Snapshots
 
 Stats known to work, to roll back to: `git checkout snapshot-N -- src/battle_tuning.cpp include/rush2049_game.h us.toml`
 (then `tools/recompile.sh` and a build).
 
-- **Snapshot 1** (2026-11-09, tag `snapshot-1`): the Battle Mode Alt table above as it stands, plus the cooldown bar.
+- **Snapshot 1** (2026-11-09, tag `snapshot-1`): the Battle Mode Alt table above as it STOOD, plus the cooldown bar.
 
 # Still to do
 
@@ -69,7 +74,7 @@ Stats known to work, to roll back to: `git checkout snapshot-N -- src/battle_tun
 - Mines: the first two in 111406 did no damage with the enemy right there
 - An in-game way to dial stats: a mods-menu panel, or F1-F10 keys with an overlay
 - ~~Powerups give a small cooldown bar~~ coded, to play: 64 x 3 px bar, top centre of each view, one per timed
-  powerup (invisibility violet, shield blue; both 30 s), emptying as it runs out (colours and size are constants in
+  powerup (invisibility white, shield blue; both 30 s), emptying as it runs out (colours and size are constants in
   `include/rush2049_game.h`)
 - ~~Invisibility hides the arrow~~ coded, to play. Next: the car's own alpha (the game keeps it at 0x20 or more,
   `func_8008C884`; the fade is record +0x3A1, 255 down to 16 by 8 a frame)

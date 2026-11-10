@@ -76,8 +76,12 @@ round, in each mode, and when two different machines do.
       time.
 - [ ] Which port each player is: every machine feeds its own controller into its port and the others' from the
       network. The menus too, so that picking the mode, track and cars is played in step like the race.
-- [ ] A handshake before a match: the same ROM, the same build, and the same settings wherever a setting changes the
-      race (Battle Mode Alt, the Battle Tuning mod's sliders, other mods). A mismatch is refused with the reason.
+- [ ] A handshake before a match: the same ROM and the same build, or the match is refused with the reason. Then the
+      settings wherever a setting changes the race (Battle Mode Alt, the Battle Tuning mod's sliders, other mods):
+      each player sends theirs, and every setting they differ in is settled the same way on every machine. With two
+      players, a random pick between the two values, from the match's shared seed; with three or four, the value most
+      players have, and a random pick from the seed among the values tied for most. The match runs with the settled
+      values and every player sees which were changed; their own saved settings are left as they were.
 - [ ] Desync detection: the race hash exchanged every second or so; on a mismatch the match stops and both sides
       keep a dump to compare.
 - [ ] Connect by address or by code, from the menu. First target: 2-player Battle.

@@ -28,7 +28,7 @@ it shipped.
 
 | Mod | Status | What it does |
 |---|---|---|
-| Cheat Menu | Done, to play | Option Cheat Menu (General tab, `src/cheat_menu.cpp`). At Always Shown each of the game's eleven cheat flags (halfwords from `0x8011648C`) is held at `0x0101` (available, not switched on) on every retrace, so CHEATS is on the main menu from the start and needs no combos. |
+| Cheat Menu | Done, played | Option Cheat Menu (General tab, `src/cheat_menu.cpp`). At Always Shown each of the game's eleven cheat flags (halfwords from `0x8011648C`) is held at `0x0101` (available, not switched on) on every retrace, so CHEATS is on the main menu from the start and needs no combos. |
 
 ## Other ideas
 

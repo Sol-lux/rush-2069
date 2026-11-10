@@ -38,6 +38,7 @@ points at the other.
   - `docs/ruled-out.md`: what has been tried and measured, so don't retry it. Read it before a performance or
     rendering change.
   - `docs/mods.md`: the gameplay mods, done and planned, and the game memory and code each one uses.
+  - `docs/netplay.md`: online play, what it needs, in order, and what the sync probe has measured.
 - **This file**: only what an agent can't get from the others. It changes when a rule changes.
 
 This repo is public. Write for a stranger, in the present tense: nothing about a contributor's own

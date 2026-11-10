@@ -1,7 +1,6 @@
 # Netplay
 
-Everything that has to be done to play Race, Stunt and Battle online, and what is known so far. The work is on the
-`netplay` branch.
+Everything that has to be done to play Race, Stunt and Battle online, and what is known so far.
 
 ## What it is to be
 

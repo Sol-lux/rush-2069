@@ -65,7 +65,11 @@ round, in each mode, and when two different machines do.
       seven agree again, so the race's state stays the same and something that changes every 8 frames is caught at
       a different point; from read 4866 they differ to the end. Counting thread 7's frames instead of thread 5's
       steps puts the two runs 18 frames apart before the first step (the boot's frames), and they never agree.
-- [ ] The read in 8 that differs from read 1724, and the lasting difference from read 4866.
+- [ ] The read in 8 that differs, and the lasting difference. Neither is at a fixed read: over three pairs of
+      replays the reads in 8 started at 1725, 1727 and 3217, and the lasting difference at 4866, 4898 and about
+      4705. Where the runs differ for good, the random state (`0x8011735C`) differs, and so does a table of 0x44-byte
+      entries at `0x80132D7C`-`0x80133014`. No other word of the race's memory differs before those. So the next
+      step is the random generator's callers (below).
 - [ ] Set the random state at the start of a match from a seed both sides share.
 - [ ] Find every caller of the random generator and sort them: those in drawing code (effects, sounds) must either
       run the same number of times on every machine or use a generator of their own.

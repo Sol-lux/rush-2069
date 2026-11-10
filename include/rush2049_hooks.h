@@ -129,6 +129,11 @@ void rush2049_sync_random(uint8_t* rdram, uint32_t func, uint32_t caller);
 /* The frame lock (src/frame_lock.cpp): thread 5 before it reads the controllers, thread 7 at its wait for a frame,
    and the retraces a frame counts, which the lock makes 1. */
 void rush2049_frame_lock_step(uint8_t* rdram);
+/* The frame lock: whether func_80097798 reads inline instead of on the loader thread. */
+int rush2049_frame_lock_inline_load(void);
+/* The frame lock: the car sounds' random steps (func_800E0050) on a generator of their own. */
+uint32_t rush2049_frame_lock_sound_random(uint8_t* rdram, uint32_t state);
+void rush2049_frame_lock_sound_random_stored(uint8_t* rdram);
 void rush2049_frame_lock_frame(uint8_t* rdram, uint32_t site);
 uint32_t rush2049_frame_lock_retraces(uint8_t* rdram, uint32_t retraces);
 uint32_t rush2049_frame_lock_time(uint32_t retrace_count);

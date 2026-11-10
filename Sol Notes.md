@@ -33,7 +33,7 @@ Cars touching do no damage on their own: only the Rammer hurts on contact. A shi
 ## Battle Mode Alt (now)
 
 Changes are ==highlighted==. On top of these, every hit is halved (Double Health), so e.g. a mine does 400.
-{Suggest changes in {}, updated when it's coded}
+{Suggest changes in {}, remove and update entry when it's coded}
 
 ### Snapshot 2wip
 
@@ -83,4 +83,4 @@ Large missile rocket flying speed (+10%)
  
 # Mod: Armor Rehaul
 will get merged into Battle+
-Heavy > H. Alloy > Standard > S. Alloy > Light > L. Alloy
+Heavy +10% armor > H. Alloy > Standard > S. Alloy > Light > L. Alloy +5% speed

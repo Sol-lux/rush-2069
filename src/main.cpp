@@ -723,6 +723,9 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "--sync-hw") == 0 && i + 1 < argc) {
             rush2049::sync_hw(argv[++i]);
         }
+        if (strcmp(argv[i], "--sync-seed") == 0 && i + 1 < argc) {
+            rush2049::sync_seed((uint32_t)strtoul(argv[++i], nullptr, 16));
+        }
         if (strcmp(argv[i], "--sync-random") == 0 && i + 1 < argc) {
             rush2049::sync_random(argv[++i]);
         }

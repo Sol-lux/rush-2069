@@ -11,7 +11,8 @@
 //                        buttons, stick centred) past its end
 // --sync-hash <file>     a line each read while a race runs: the read's number, the tick count, the timer's count of
 //                        60ths (0x8002EB64) and a hash of the race's memory, which is what Rewind saves
-//                        (rush2049::race_memory, src/rewind.cpp)
+//                        (rush2049::race_memory, src/rewind.cpp), then the same hash without the words that hold
+//                        a sound's ID (sound_id_words: the sound manager hands them out on the audio thread's clock)
 // --sync-dump <prefix> <reads>   all of RDRAM, as it is in memory, to <prefix><read>.bin at each of those reads
 //                        (comma-separated numbers), to see which words two runs differ in
 // --sync-random <file>   a line each time a function that steps the random state (0x8011735C) is entered (us.toml
@@ -24,6 +25,8 @@
 //                        frame really counted; Y: that thread's spin yields since the last read), then the graphics
 //                        task counter (0x8002EB70), the frame loop's state (0x801174B4) and the tick count. Logged
 //                        with or without --frame-lock; the first line two replays part at names what split them
+// --sync-seed <hex>      the random state set to that value at every read until a race runs, so that a race starts
+//                        from the same state whatever the menus and the load drew from it
 //
 // Two replays of one recording that write the same hash file played the same race. Where they part, the first line
 // that differs is the read to look at.
@@ -58,26 +61,68 @@ std::vector<uint8_t> replay;
 std::string dump_prefix;
 std::vector<uint32_t> dump_reads;
 bool replaying = false;
+bool seeding = false;
+uint32_t seed = 0;
 uint32_t reads = 0;
 
 uint32_t read_word(const uint8_t* rdram, uint32_t addr) {
     return *(const uint32_t*)(rdram + (addr - 0x80000000u));
 }
 
-// The race's memory, a 64-bit word at a time (every range starts and ends on a word).
-uint64_t hash_race(const uint8_t* rdram) {
+uint64_t mix(uint64_t h, uint64_t w) {
+    h = (h ^ w) * 0xFF51AFD7ED558CCDull;
+    return h ^ (h >> 32);
+}
+
+// Where the race keeps the IDs the sound manager hands out on the audio thread's clock (docs/netplay.md): a sound's ID
+// is the manager's count of sounds started with the low bits of whichever node was free, so two runs of one race
+// differ in them though the race is the same. As offsets into RDRAM, [lo, hi).
+std::vector<std::pair<uint32_t, uint32_t>> sound_id_words() {
+    std::vector<std::pair<uint32_t, uint32_t>> v = {
+        { 0x00140420, 0x00140B14 },  // the cars' sound tables (src/rewind.cpp's held tables)
+        { 0x00143CF8, 0x00143CFC },  // a word of the manager's own
+        { 0x003BA1D0, 0x003BA1F0 },  // the Battle overlay's (ovl1_func_803A1EAC)
+    };
+    for (uint32_t n = 0; n < 32; n++) {  // the positional sounds' objects, 0x70 bytes from 0x8014E0F0, the ID at +0x60
+        v.push_back({ 0x0014E0F0 + n * 0x70 + 0x60, 0x0014E0F0 + n * 0x70 + 0x64 });
+    }
+    for (uint32_t car = 0; car < 8; car++) {  // each car's +0x3FC (func_800924F4)
+        v.push_back({ 0x0014A250 + car * 0x808 + 0x3FC, 0x0014A250 + car * 0x808 + 0x400 });
+    }
+    return v;
+}
+
+// Which 8-byte words of RDRAM hold a sound ID, a bit each.
+const std::vector<uint8_t>& sound_id_map() {
+    static const std::vector<uint8_t> map = [] {
+        std::vector<uint8_t> m(0x800000 / 8 / 8);
+        for (auto [lo, hi] : sound_id_words()) {
+            for (uint32_t at = lo & ~7u; at < hi; at += 8) {
+                m[at / 64] |= (uint8_t)(1u << ((at / 8) % 8));
+            }
+        }
+        return m;
+    }();
+    return map;
+}
+
+// The race's memory, a 64-bit word at a time (every range starts and ends on a word); with skip_sounds, without the
+// words that hold a sound ID.
+uint64_t hash_race(const uint8_t* rdram, bool skip_sounds = false) {
+    const std::vector<uint8_t>& skip = sound_id_map();
     uint64_t h = 0x9E3779B97F4A7C15ull;
     for (const rush2049::MemoryRange& r : rush2049::race_memory()) {
-        const uint8_t* p = rdram + r.lo;
-        const uint8_t* end = rdram + r.hi;
-        for (; p + 8 <= end; p += 8) {
+        uint32_t at = r.lo;
+        for (; at + 8 <= r.hi; at += 8) {
+            if (skip_sounds && (skip[at / 64] & (1u << ((at / 8) % 8))) != 0) {
+                continue;
+            }
             uint64_t w;
-            memcpy(&w, p, 8);
-            h = (h ^ w) * 0xFF51AFD7ED558CCDull;
-            h ^= h >> 32;
+            memcpy(&w, rdram + at, 8);
+            h = mix(h, w);
         }
-        for (; p < end; p++) {
-            h = (h ^ *p) * 0x100000001B3ull;
+        for (; at < r.hi; at++) {
+            h = (h ^ rdram[at]) * 0x100000001B3ull;
         }
     }
     return h;
@@ -127,6 +172,11 @@ extern "C" void rush2049_sync_random(uint8_t* rdram, uint32_t func, uint32_t cal
     }
     int thread = (int)TO_PTR(OSThread, ultramodern::this_thread())->id;
     fprintf(random_file, "%u %d %08x %08x %08x\n", reads, thread, func, caller, read_word(rdram, random_state_addr));
+}
+
+void rush2049::sync_seed(uint32_t value) {
+    seeding = true;
+    seed = value;
 }
 
 void rush2049::sync_hw(const char* path) {
@@ -185,9 +235,13 @@ extern "C" void rush2049_sync_pads(uint8_t* rdram, gpr pads_addr) {
             fflush(record_file);
         }
     }
+    if (seeding && (read_word(rdram, game_state_addr) & 0x00400000) == 0) {
+        *(uint32_t*)(rdram + (random_state_addr - 0x80000000u)) = seed;
+    }
     if (hash_file != nullptr && (read_word(rdram, game_state_addr) & 0x00400000) != 0) {
-        fprintf(hash_file, "%u %u %u %016llx\n", reads, read_word(rdram, tick_count_addr), read_word(rdram, timer_addr),
-            (unsigned long long)hash_race(rdram));
+        fprintf(hash_file, "%u %u %u %016llx %016llx\n", reads, read_word(rdram, tick_count_addr),
+            read_word(rdram, timer_addr), (unsigned long long)hash_race(rdram),
+            (unsigned long long)hash_race(rdram, true));
         if (reads % 60 == 0) {
             fflush(hash_file);
         }

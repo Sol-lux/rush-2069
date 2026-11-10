@@ -19,6 +19,17 @@
 // game time one step per retrace only at 60 frames a second: at 30 the game runs at half speed, so the lock wants the
 // Game Frame Rate at 60.
 //
+// A load's files are read by a loader thread (thread 8) and thread 7 polls each one's ready byte once a frame, so
+// how many frames a load takes depended on when thread 8 ran: one run's menus fell a step behind another's. Locked,
+// func_80097798 reads every file inline on the thread that asks (us.toml), and a load takes the same frames.
+//
+// The car sounds (func_800E0050, thread 5) ask the sound manager whether a slot's sound still plays
+// (func_800BF148) and, when it has stopped, step the game's random state (0x8011735C) inline once or twice to decide
+// whether to start another. The answer follows the audio thread's clock, so sound fed back into the race through the
+// random state. Locked, those steps use a generator of their own (us.toml, 0x800E0494, 0x800E04BC, 0x800E053C): the
+// value read is swapped for its state, and after each store the game's state is put back, so how sounds go never
+// moves the race's random state. The sound IDs the manager hands out are left out of --sync-hash.
+//
 // Waiting is rush2049_yield_to (src/spin_yield.cpp): the CPU to the other thread when it is ready, as each waits on
 // the other (rush2049_spin_yield skips a thread that spins too, and thread 5 kept it). Only threads 5 and 7
 // take part: func_800C9AE0 has other callers, and the hooks check which thread they are on.
@@ -46,6 +57,8 @@ bool frame_turn = false;
 bool step_taken = false;   // thread 5 has stepped since it last handed over
 bool frame_taken = false;  // thread 7 is running a frame it was handed
 uint32_t steps = 0;        // steps thread 5 has taken since the boot
+uint32_t sound_random = 0x3039;  // the car sounds' own random state (func_800E0050)
+uint32_t race_random = 0;        // the game's random state while the car sounds step their own
 
 uint32_t thread_id(uint8_t* rdram) {
     return (uint32_t)TO_PTR(OSThread, ultramodern::this_thread())->id;
@@ -98,6 +111,26 @@ extern "C" void rush2049_frame_lock_frame(uint8_t* rdram, uint32_t site) {
 extern "C" uint32_t rush2049_frame_lock_retraces(uint8_t* rdram, uint32_t retraces) {
     rush2049::sync_hw_event(rdram, 'R', retraces);
     return locked ? 1 : retraces;
+}
+
+extern "C" int rush2049_frame_lock_inline_load(void) {
+    return locked ? 1 : 0;
+}
+
+extern "C" uint32_t rush2049_frame_lock_sound_random(uint8_t* rdram, uint32_t state) {
+    if (!locked) {
+        return state;
+    }
+    race_random = *(uint32_t*)(rdram + (0x8011735Cu - 0x80000000u));
+    return sound_random;
+}
+
+extern "C" void rush2049_frame_lock_sound_random_stored(uint8_t* rdram) {
+    if (!locked) {
+        return;
+    }
+    sound_random = *(uint32_t*)(rdram + (0x8011735Cu - 0x80000000u));
+    *(uint32_t*)(rdram + (0x8011735Cu - 0x80000000u)) = race_random;
 }
 
 extern "C" uint32_t rush2049_frame_lock_time(uint32_t retrace_count) {

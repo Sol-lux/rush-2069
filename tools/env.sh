@@ -8,6 +8,16 @@ N64TC="$(cygpath -u "$N64TC")"
 # Without it the environment stays as it is: a toolchain already on PATH (clang-cl, CMake, Ninja, make, the MSVC
 # libraries in INCLUDE and LIB) with MIPS_CC and MIPS_LD set, such as a WSL clang: MIPS_CC="wsl clang" (patches/
 # builds with paths relative to it, which WSL maps).
+# If Visual Studio is installed, its own CMake and Ninja go on PATH first, so tools/recompile.sh finds Ninja there.
+_vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+if [ ! -d "$N64TC" ] && [ -f "$_vswhere" ]; then
+    _vs="$("$_vswhere" -latest -prerelease -products '*' -property installationPath | tr -d '\r')"
+    if [ -n "$_vs" ]; then
+        _vs="$(cygpath -u "$_vs")/Common7/IDE/CommonExtensions/Microsoft/CMake"
+        command -v ninja > /dev/null || export PATH="$_vs/Ninja:$_vs/CMake/bin:$PATH"
+    fi
+fi
+unset _vswhere _vs
 [ -d "$N64TC" ] || return 0
 _msvc="$N64TC/portable-msvc/msvc"
 _vc="$_msvc/VC/Tools/MSVC/14.44.35207"

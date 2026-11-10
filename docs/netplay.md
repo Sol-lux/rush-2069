@@ -17,7 +17,7 @@ Everything that has to be done to play Race, Stunt and Battle online, and what i
 ## What is known
 
 Measured with the sync probe (`src/sync_probe.cpp`; `--sync-record`, `--sync-replay`, `--sync-hash`, `--sync-dump`,
-`--sync-random`, `--sync-hw` in `docs/building.md`): a 2-player Battle round recorded once and replayed twice, memory compared at the same
+`--sync-random`, `--sync-hw`, `--sync-seed` in `docs/building.md`): a 2-player Battle round recorded once and replayed twice, memory compared at the same
 controller reads.
 
 - **Input.** Thread 5 (`func_800E7808`) waits for a retrace, reads the four controllers (`func_800E73D8`,
@@ -88,9 +88,45 @@ round, in each mode, and when two different machines do.
       bytes a car, `func_800E0050`, e.g. `0x801404B4`). The sound manager hands out those IDs on the audio thread's
       own clock, so sound feeds back into the race's memory. In the other pair the random state and words at
       `0x80152B8C` and `0x80160358`-`0x801603BC` also differed by read 516. So there is more than one cause, and which
-      ones show up changes from run to run. The next steps: give sounds IDs that don't depend on the audio thread (or
-      show the race only uses them to stop and change sounds, and leave them out of the hash), then find what writes
-      the random state and `0x80160358` before the race in a pair where they split.
+      ones show up changes from run to run.
+      A sound's ID is the manager's count of sounds started, shifted, with the low bits of the node it was given
+      (`func_80092278`), and which node is free depends on when the audio thread freed the last ones. Only the audio
+      thread reads the manager's lists (`0x80144028`, `0x80144C58`); no race code compares an ID with anything but -1,
+      and the one answer the race gets back, whether a slot's sound still plays (`func_800BF148`, at `0x800E0480` in
+      `func_800E0050`), only decides whether a new sound is started into that slot. IDs are stored in the cars' tables
+      (`0x80140420`-`0x80140B14`), each car's +0x3FC, the positional sounds' objects (`0x8014E0F0`-`0x8014E300`, 0x70
+      bytes each, the ID at +0x60), a list from `0x80149868` (+0x38) and the Battle overlay's `0x803BA1D0`. A word of
+      the manager's own (`0x80143CF8`) is inside the race's memory too.
+      `--sync-seed` holds the random state at one value at every read until the race runs. In two pairs of seeded
+      replays the random logs were the same through the whole round, and the race's memory at reads 700 to 1500
+      differed only in sound IDs and `0x80143CF8`: the cars, the weapons and the random state were the same. In a
+      third run the menus fell one step behind (a load started at read 307, not 306: one more frame of the screen
+      before it, state `0x00080000`), the race started at read 519, and from there everything differed. That run also
+      stopped stepping at read 3211 in the race, with the game still open: a hang under the lock, not yet looked at.
+      What held that screen: a load's files are read by a loader thread (thread 8, through the PI's DMA), and the frame
+      loop polls each file's ready byte once a frame, so whether a read was done by the poll depended on when thread 8
+      ran. Under the lock, `func_80097798` now reads every file inline on the thread that asks (`src/frame_lock.cpp`).
+      With that and the seed, every replay starts the race on the same read (514), and `--sync-hash`'s second column
+      (the race's memory without the words that hold a sound ID) was the same in three replays at all 8608 of the
+      round's reads: the same game from the same input, on one machine. No run hung with inline loads (seven runs to
+      the round's end); the one hang, with the loader thread, is not explained.
+- [ ] The sound IDs: kept out of the desync check for good. Only the audio thread reads them back, and the race
+      only compares them with -1. But sound did feed back into the race: when `func_800BF148` says a car's slot has
+      stopped (the audio thread's clock), `func_800E0050` steps the random state (`0x8011735C`) inline, once or twice
+      (`0x800E0488`-`0x800E0538`), to pick whether to start another. One replay pair on one machine never showed it,
+      as both had the same audio timing; two machines would. Under the lock those steps now use a generator of
+      their own (`src/frame_lock.cpp`), so the race's random state no longer follows sound. In two seeded, locked
+      replays with it the random logs were the same call for call through the round. Their race hashes still parted
+      at read 1727, three reads in eight at first: the words that differ there are a display list (`0x80125F50` and
+      `0x8012AA50`, a buffer each frame), a copy of the real retrace count (`0x80111958`) and a counter
+      (`0x80124F70`), i.e. drawing inside what the hash counts as the race. Whether the cars and weapons part later
+      is not yet checked. The other two callers of `func_800BF148` (`func_800BF1C8`, `func_800BF45C`) are called only from
+      `func_800C0AC0`, which nothing calls directly (reached by pointer, not yet traced).
+      The thorough fix, if one is ever needed (another feedback found, or the sounds themselves wanted the same on
+      every machine, e.g. for replays): make "still playing" a function of the race alone, a sound counted done a
+      set number of steps after it starts (its length from the sample table), so every machine gets the same
+      answer, and hand out IDs from the race's own count rather than the manager's free nodes.
+- [ ] Battle and Stunt and Race each, and two different machines.
 - [ ] Set the random state at the start of a match from a seed both sides share.
 - [ ] Find every caller of the random generator and sort them: those in drawing code (effects, sounds) must either
       run the same number of times on every machine or use a generator of their own.

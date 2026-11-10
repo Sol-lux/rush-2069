@@ -291,6 +291,32 @@ text = "    rush2049_sync_pads(rdram, ctx->r29 + 0x54);"
 # thread 7 at its wait for a frame (func_800C9AE0, after the frame message and the queue emptied) and at the end of
 # the wait it has in a load (after func_800EDDC0); and the retraces a frame counts ($t2, from 0x8002EB98), just before
 # func_800013F4 turns them into the frame's time.
+# The frame lock's loads: func_80097798 reads a file inline (func_80097164) when its third argument is 0, and
+# otherwise posts the read to the loader thread (thread 8, queue 0x80156BB0), whose ready byte thread 7 polls once a
+# frame, so whether the read is done by that poll depends on the machine. Locked, every read is inline.
+[[patches.hook]]
+func = "func_80097798"
+before_vram = 0x80097798
+text = "    if (rush2049_frame_lock_inline_load()) ctx->r6 = 0;"
+
+# The frame lock's car sounds: func_800E0050 steps the random state ($s4 = 0x8011735C) inline when a slot's sound has
+# stopped (func_800BF148), which follows the audio thread. Locked, the state it multiplies ($t6) is the car sounds'
+# own, and after each of its two stores (0x800E04B8, 0x800E0538) the game's state is put back (src/frame_lock.cpp).
+[[patches.hook]]
+func = "func_800E0050"
+before_vram = 0x800E0494
+text = "    ctx->r14 = (gpr)(int32_t)rush2049_frame_lock_sound_random(rdram, (uint32_t)ctx->r14);"
+
+[[patches.hook]]
+func = "func_800E0050"
+before_vram = 0x800E04BC
+text = "    rush2049_frame_lock_sound_random_stored(rdram);"
+
+[[patches.hook]]
+func = "func_800E0050"
+before_vram = 0x800E053C
+text = "    rush2049_frame_lock_sound_random_stored(rdram);"
+
 [[patches.hook]]
 func = "func_800E7808"
 before_vram = 0x800E78BC

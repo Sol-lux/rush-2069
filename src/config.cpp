@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <atomic>
 #include <filesystem>
+#include <chrono>
+#include <thread>
 
+#include "debug_probe.h"
 #include "rush2049_game.h"
 #include "rush2049_hooks.h"
 #include "musyx_hle.h"
@@ -19,9 +22,25 @@
 #include "ultramodern/ultramodern.hpp"
 
 // runtime-patches/rt64-0009: see-through surfaces drawn this many display lists deep go after the rest of their
-// view, 0 for none.
+// view, 0 for none. rt64-0012: bloom before the HUD, an intensity of 0 for none. rt64-0013: brightness, contrast and
+// gamma over the whole picture.
 namespace RT64 {
     void setTranslucentSort(uint32_t minListDepth);
+    void setBloom(float intensity, float threshold, float radius);
+    // rt64-0015: the textures that glow, by RT64's texture hash, each with a gain.
+    void setGlowTextures(const uint64_t *hashes, const float *gains, uint32_t count);
+    void setPictureAdjust(float brightness, float contrast, float gamma);
+    // rt64-0014: HDR output, read when the swap chain is made.
+    void setHdrOutput(bool enabled, float paperWhiteNits, float peakNits, float highlights);
+    // rt64-0016: shadows from a sun, a strength of 0 for none (the same struct as RT64's rt64_state.h).
+    struct ShadowSettings {
+        float strength = 0.0f;
+        float direction[3] = { 0.3f, -1.0f, 0.2f };
+        float range = 5000.0f;
+        float tint[3] = { 0.5f, 0.55f, 0.7f };
+        bool debugView = false; // in shadow red, lit green, outside the shadow map blue
+    };
+    void setShadows(const ShadowSettings &settings);
 }
 
 namespace {
@@ -198,6 +217,102 @@ namespace {
     };
     const std::string see_through_order_option = "see_through_order";
 
+    enum class Bloom {
+        Original,
+        Low,
+        Medium,
+        High,
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> bloom_options = {
+        {Bloom::Original, "Original", "Original"},
+        {Bloom::Low, "Low", "Low"},
+        {Bloom::Medium, "Medium", "Medium"},
+        {Bloom::High, "High", "High"},
+    };
+    const std::string bloom_option = "bloom";
+
+    enum class Shadows {
+        Original,
+        Light,
+        Dark,
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> shadows_options = {
+        {Shadows::Original, "Original", "Original"},
+        {Shadows::Light, "Light", "Light"},
+        {Shadows::Dark, "Dark", "Dark"},
+    };
+    const std::string shadows_option = "shadows";
+
+    // Brightness, Contrast and Gamma: five steps each, Original in the middle (index 2).
+    const std::vector<recomp::config::ConfigOptionEnumOption> brightness_options = {
+        {0, "Darker2", "Darker 2"}, {1, "Darker", "Darker"}, {2, "Original", "Original"},
+        {3, "Brighter", "Brighter"}, {4, "Brighter2", "Brighter 2"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> contrast_options = {
+        {0, "Lower2", "Lower 2"}, {1, "Lower", "Lower"}, {2, "Original", "Original"},
+        {3, "Higher", "Higher"}, {4, "Higher2", "Higher 2"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> gamma_options = {
+        {0, "Darker2", "Darker 2"}, {1, "Darker", "Darker"}, {2, "Original", "Original"},
+        {3, "Brighter", "Brighter"}, {4, "Brighter2", "Brighter 2"},
+    };
+    const std::string brightness_option = "brightness";
+    const std::string contrast_option = "contrast";
+    const std::string gamma_option = "gamma";
+    uint32_t picture_brightness = 2, picture_contrast = 2, picture_gamma = 2;
+
+    // Shadows (runtime-patches/rt64-0016-shadows.patch): the option's strength, and the developer flags' sun
+    // direction and debug view (rush2049::set_shadow_tuning).
+    uint32_t shadows_level = 0;
+    float shadows_sun[3] = { 0.3f, -1.0f, 0.2f };
+    bool shadows_debug = false;
+    // Whether a track is loaded (rush2049::start_shadow_gate): the menus draw 3D models too (the spinning coin, the
+    // items behind the text while they animate), which must cast nothing.
+    std::atomic<bool> shadows_in_track{ false };
+    void apply_shadows() {
+        static constexpr float strength[] = { 0.0f, 0.5f, 0.8f };
+        RT64::ShadowSettings settings;
+        settings.strength = shadows_in_track.load() ? strength[shadows_level] : 0.0f;
+        for (int i = 0; i < 3; i++) {
+            settings.direction[i] = shadows_sun[i];
+        }
+
+        settings.debugView = shadows_debug;
+        RT64::setShadows(settings);
+    }
+    void apply_picture() {
+        static constexpr float brightness[] = { -0.08f, -0.04f, 0.0f, 0.04f, 0.08f };
+        static constexpr float contrast[] = { 0.8f, 0.9f, 1.0f, 1.1f, 1.2f };
+        static constexpr float gamma[] = { 1.25f, 1.12f, 1.0f, 0.89f, 0.8f };
+        RT64::setPictureAdjust(brightness[picture_brightness], contrast[picture_contrast], gamma[picture_gamma]);
+    }
+
+    // HDR Output and its levels (runtime-patches/rt64-0014-hdr-output.patch, plume-0006, RecompFrontend-0009).
+    const std::vector<recomp::config::ConfigOptionEnumOption> hdr_output_options = {
+        {0, "Original", "Original"}, {1, "On", "On"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> hdr_paper_white_options = {
+        {0, "100", "100 nits"}, {1, "150", "150 nits"}, {2, "200", "200 nits"}, {3, "250", "250 nits"}, {4, "300", "300 nits"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> hdr_peak_options = {
+        {0, "400", "400 nits"}, {1, "600", "600 nits"}, {2, "800", "800 nits"}, {3, "1000", "1000 nits"}, {4, "1500", "1500 nits"},
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> hdr_highlights_options = {
+        {0, "None", "None"}, {1, "Low", "Low"}, {2, "Medium", "Medium"}, {3, "High", "High"},
+    };
+    const std::string hdr_output_option = "hdr_output";
+    const std::string hdr_paper_white_option = "hdr_paper_white";
+    const std::string hdr_peak_option = "hdr_peak";
+    const std::string hdr_highlights_option = "hdr_highlights";
+    uint32_t hdr_output = 0, hdr_paper_white = 2, hdr_peak = 3, hdr_highlights = 2;
+    void apply_hdr() {
+        static constexpr float paper_white[] = { 100.0f, 150.0f, 200.0f, 250.0f, 300.0f };
+        static constexpr float peak[] = { 400.0f, 600.0f, 800.0f, 1000.0f, 1500.0f };
+        static constexpr float highlights[] = { 0.0f, 0.33f, 0.66f, 1.0f };
+        RT64::setHdrOutput(hdr_output == 1, paper_white[hdr_paper_white], peak[hdr_peak], highlights[hdr_highlights]);
+        recompui::renderer::set_hdr_ui_white(paper_white[hdr_paper_white]);
+    }
+
     // src/battle_tuning.cpp.
     enum class BattleMode {
         Original,
@@ -303,6 +418,43 @@ bool rush2049::split_screen_expand() {
 
 bool rush2049::menu_expand() {
     return menu_ratio_setting.load(std::memory_order_relaxed) == MenuRatio::Expand;
+}
+
+// --shadow-sun and --shadow-debug (docs/building.md): the sun's direction, and the shadow debug view.
+void rush2049::set_shadow_tuning(const float *sun_direction, bool debug_view) {
+    if (sun_direction != nullptr) {
+        for (int i = 0; i < 3; i++) {
+            shadows_sun[i] = sun_direction[i];
+        }
+    }
+
+    shadows_debug = shadows_debug || debug_view;
+    apply_shadows();
+}
+
+// Shadows only while a track is loaded: the list of scenery boxes Scenery Culling walks (the pointer at 0x80149B80,
+// src/draw_distance.cpp) is set for a track and cleared in the menus, so it is checked ten times a second.
+void rush2049::start_shadow_gate() {
+    std::thread([]() {
+        uint8_t* rdram;
+        while ((rdram = rush2049::probe_get_rdram()) == nullptr) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        while (true) {
+            uint32_t boxes = *reinterpret_cast<const uint32_t*>(rdram + (0x80149B80 - 0x80000000));
+            bool in_track = boxes >= 0x80000000 && boxes < 0x80800000;
+            if (in_track != shadows_in_track.load()) {
+                shadows_in_track = in_track;
+                apply_shadows();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }).detach();
+}
+
+void rush2049::set_shadow_debug(bool debug_view) {
+    shadows_debug = debug_view;
+    apply_shadows();
 }
 
 static Accessory accessory() {
@@ -661,6 +813,133 @@ void rush2049::init_config() {
     on_apply(graphics, see_through_order_option, [](uint32_t value) {
         RT64::setTranslucentSort(value == (uint32_t)SeeThroughOrder::Sorted ? 2 : 0);
     });
+
+    graphics.add_enum_option(
+        bloom_option,
+        "Bloom",
+        "A soft glow around the bright parts of the picture: the sky, lights, flames and shine on the cars. The HUD "
+        "doesn't glow."
+        "<br/>"
+        "<b>Original:</b> no glow, as the game shipped. <b>Low</b>, <b>Medium</b> and <b>High</b> add more of it.",
+        bloom_options,
+        Bloom::Original
+    );
+    // Called on load too. RT64's bloom (runtime-patches/rt64-0012-bloom.patch): intensity, threshold, blur radius.
+    on_apply(graphics, bloom_option, [](uint32_t value) {
+        static constexpr float intensity[] = { 0.0f, 0.3f, 0.5f, 0.8f };
+        RT64::setBloom(intensity[value], 0.7f, 6.0f);
+
+        // The textures that glow with bloom on: their draws are drawn again into a mask, and its bright parts glow
+        // whatever the threshold (rt64-0015). By RT64's texture hash (--dump-textures names each file by it), picked
+        // by eye in the attract race on Track 1: the sunset strip of the sky, the light strips of the arrow signs (one
+        // texture per stage of their chase; only the lit parts are bright enough to glow), the green arrow lights,
+        // the white light panel, the fire, and the white streaks of light.
+        struct Glow { uint64_t hash; float gain; };
+        static constexpr Glow glow[] = {
+            { 0xff7702143e532e89, 1.0f }, { 0x4c54eb90cd773e21, 1.0f }, { 0xa835fce4d0a61897, 1.0f }, // sky strip
+            { 0xf7939109599e735e, 1.0f }, { 0x040ea08fc05afc89, 1.0f }, { 0xa6fa1f8136a0ecf8, 1.0f },
+            { 0x9631d1419b3d8b35, 1.0f }, { 0x6c9fd965090dfdc7, 1.0f }, { 0x32725ed8645b3a19, 1.0f },
+            { 0x0cb4d09fa3aa5ab8, 1.0f },
+            { 0xdef7de9ed80039f1, 1.5f }, { 0x8fc1367a77baa62d, 1.5f }, { 0xd094d785decb2c3d, 1.5f }, // arrow signs
+            { 0x1cac697c8d17ff06, 1.5f }, // green arrow lights
+            { 0x2e4027f6b59b53a5, 1.5f }, // light panel
+            { 0x4f7db91da190b728, 1.5f }, // fire
+            { 0x45176efd102ac815, 1.0f }, // streaks of light
+        };
+        uint64_t hashes[std::size(glow)];
+        float gains[std::size(glow)];
+        for (size_t i = 0; i < std::size(glow); i++) {
+            hashes[i] = glow[i].hash;
+            gains[i] = glow[i].gain;
+        }
+
+        RT64::setGlowTextures(hashes, gains, value == (uint32_t)Bloom::Original ? 0 : uint32_t(std::size(glow)));
+    });
+
+    graphics.add_enum_option(
+        shadows_option,
+        "Shadows",
+        "Shadows from the sun: the cars, buildings, bridges and signs cast them onto the road and onto each other."
+        "<br/>"
+        "<b>Original:</b> no shadows but the cars' own, as the game shipped. <b>Light</b> and <b>Dark</b> are how "
+        "deep they are.",
+        shadows_options,
+        Shadows::Original
+    );
+    // Called on load too. RT64's sun shadows (runtime-patches/rt64-0016-shadows.patch).
+    on_apply(graphics, shadows_option, [](uint32_t value) { shadows_level = std::min(value, 2u); apply_shadows(); });
+
+    graphics.add_enum_option(
+        brightness_option,
+        "Brightness",
+        "Lighter or darker over the whole picture, the HUD too. <b>Original:</b> as the game shipped.",
+        brightness_options,
+        2
+    );
+    // Called on load too. RT64's VI pass (runtime-patches/rt64-0013-picture-adjust.patch).
+    on_apply(graphics, brightness_option, [](uint32_t value) { picture_brightness = std::min(value, 4u); apply_picture(); });
+
+    graphics.add_enum_option(
+        contrast_option,
+        "Contrast",
+        "More or less difference between the dark and light parts of the picture, the HUD too. <b>Original:</b> as "
+        "the game shipped.",
+        contrast_options,
+        2
+    );
+    on_apply(graphics, contrast_option, [](uint32_t value) { picture_contrast = std::min(value, 4u); apply_picture(); });
+
+    graphics.add_enum_option(
+        gamma_option,
+        "Gamma",
+        "Lighter or darker mid-tones, keeping black black and white white, the HUD too. <b>Original:</b> as the game "
+        "shipped.",
+        gamma_options,
+        2
+    );
+    on_apply(graphics, gamma_option, [](uint32_t value) { picture_gamma = std::min(value, 4u); apply_picture(); });
+
+    graphics.add_enum_option(
+        hdr_output_option,
+        "HDR Output",
+        "For an HDR display with HDR turned on in Windows: the picture is sent as HDR, so the brightest parts (the sky, "
+        "lights, flames) can go brighter than white. Takes effect the next time the game starts."
+        "<br/>"
+        "<b>Original:</b> an SDR picture, as the game shipped. <b>On:</b> HDR, set with the three options below.",
+        hdr_output_options,
+        0
+    );
+    // Called on load too, before the renderer starts. RT64 reads it once, when it makes the swap chain.
+    on_apply(graphics, hdr_output_option, [](uint32_t value) { hdr_output = std::min(value, 1u); apply_hdr(); });
+
+    graphics.add_enum_option(
+        hdr_paper_white_option,
+        "HDR Brightness",
+        "With HDR Output on: how bright the game's white is, the HUD and menus too. Pick what matches the rest of the "
+        "desktop.",
+        hdr_paper_white_options,
+        2
+    );
+    on_apply(graphics, hdr_paper_white_option, [](uint32_t value) { hdr_paper_white = std::min(value, 4u); apply_hdr(); });
+
+    graphics.add_enum_option(
+        hdr_peak_option,
+        "HDR Peak Brightness",
+        "With HDR Output on: the brightest the display can go. Nothing is sent brighter than this.",
+        hdr_peak_options,
+        3
+    );
+    on_apply(graphics, hdr_peak_option, [](uint32_t value) { hdr_peak = std::min(value, 4u); apply_hdr(); });
+
+    graphics.add_enum_option(
+        hdr_highlights_option,
+        "HDR Highlights",
+        "With HDR Output on: how far the brightest parts of the picture are lifted above white, towards the peak "
+        "brightness. <b>None:</b> the picture as SDR shows it, at the HDR Brightness.",
+        hdr_highlights_options,
+        2
+    );
+    on_apply(graphics, hdr_highlights_option, [](uint32_t value) { hdr_highlights = std::min(value, 3u); apply_hdr(); });
 
     graphics.add_enum_option(
         ghost_arrows_option,

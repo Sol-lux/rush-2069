@@ -1,0 +1,83 @@
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index 2cdcf18..f4d227e 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -1358,6 +1358,21 @@ namespace plume {
+ 
+         d3d = static_cast<IDXGISwapChain3 *>(swapChain1);
+         d3d->SetMaximumFrameLatency(desc.maxFrameLatency);
++
++        // Rush 2049 patch: scRGB for HDR output.
++        if (desc.colorSpace == RenderColorSpace::EXTENDED_SRGB_LINEAR) {
++            UINT support = 0;
++            const DXGI_COLOR_SPACE_TYPE colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
++            if (SUCCEEDED(d3d->CheckColorSpaceSupport(colorSpace, &support)) && (support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT)) {
++                res = d3d->SetColorSpace1(colorSpace);
++                fprintf(stdout, "HDR output: scRGB swap chain%s.\n", SUCCEEDED(res) ? "" : " (SetColorSpace1 failed)");
++            }
++            else {
++                fprintf(stdout, "HDR output: the display doesn't take scRGB.\n");
++            }
++
++            fflush(stdout);
++        }
+         waitableObject = d3d->GetFrameLatencyWaitableObject();
+ 
+         textures.resize(desc.textureCount);
+diff --git a/plume_render_interface_types.h b/plume_render_interface_types.h
+index b352bb6..4443ad5 100644
+--- a/plume_render_interface_types.h
++++ b/plume_render_interface_types.h
+@@ -1143,10 +1143,18 @@ namespace plume {
+         bool allowOnlyBuffers = false;
+     };
+ 
++    // Rush 2049 patch: how the display reads the swap chain's values. EXTENDED_SRGB_LINEAR (scRGB) is for an HDR
++    // display: linear, 1.0 is 80 nits, above 1.0 brighter, with a float format (R16G16B16A16_FLOAT).
++    enum class RenderColorSpace {
++        SRGB_NONLINEAR,
++        EXTENDED_SRGB_LINEAR
++    };
++
+     struct RenderSwapChainDesc {
+         RenderWindow renderWindow = {};
+         RenderFormat format = RenderFormat::UNKNOWN;
+         uint32_t textureCount = 0;
++        RenderColorSpace colorSpace = RenderColorSpace::SRGB_NONLINEAR;
+ 
+         // The capability for presentWait must be supported by the RenderDevice.
+         bool enablePresentWait = false;
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index f36d6d1..3f568de 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -62,6 +62,8 @@ namespace plume {
+     };
+ 
+     static const std::unordered_set<std::string> OptionalInstanceExtensions = {
++        // Rush 2049 patch: HDR output's scRGB color space (RenderColorSpace::EXTENDED_SRGB_LINEAR).
++        VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,
+ #   if defined(__APPLE__)
+         // Tells the system Vulkan loader to enumerate portability drivers, if supported.
+         VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
+@@ -2200,7 +2202,6 @@ namespace plume {
+         for (uint32_t i = 0; i < surfaceFormatCount; i++) {
+             if (surfaceFormats[i].format == requestedFormat) {
+                 compatibleSurfaceFormats.emplace_back(surfaceFormats[i]);
+-                break;
+             }
+         }
+ 
+@@ -2210,8 +2211,11 @@ namespace plume {
+         }
+ 
+         // Pick the preferred color space, if not available, pick whatever first shows up on the list.
++        // Rush 2049 patch: the one the description asks for (scRGB for HDR output).
++        const VkColorSpaceKHR preferredColorSpace = (desc.colorSpace == RenderColorSpace::EXTENDED_SRGB_LINEAR) ?
++            VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT : VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+         for (const VkSurfaceFormatKHR &surfaceFormat : compatibleSurfaceFormats) {
+-            if (surfaceFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
++            if (surfaceFormat.colorSpace == preferredColorSpace) {
+                 pickedSurfaceFormat = surfaceFormat;
+                 break;
+             }

@@ -68,6 +68,14 @@ option has an Original value that runs the game as it shipped.
   signal arm on the bridge at its end, cut into the arrows of ghosts in plain view. The arrows are now drawn after the
   scenery, each one whole while its tip above the ghost can be seen, and not at all while something in front hides
   it.
+- **Bloom**: a soft glow around the bright parts of the picture (the sky, lights, flames, shine on the cars), at Low,
+  Medium or High. The HUD doesn't glow. Off as the game shipped.
+- **Shadows**: shadows from the sun, Light or Dark: the cars, trees, buildings and bridges cast them onto the road and
+  onto each other. Off as the game shipped.
+- **Brightness, contrast and gamma**: five steps each, over the whole picture, the HUD too.
+- **HDR output**: for an HDR display with HDR on in Windows, the picture is sent as HDR, with the game's white at a
+  brightness you pick and its brightest parts lifted above it, up to the display's peak. The menus follow the same
+  white. Takes effect the next time the game starts. Off as the game shipped.
 - **Enhanced audio**: MusyX music and sound effects are mixed at 44.1 kHz with a better interpolator instead of the
   game's 22.05 kHz mix, loud peaks are softly limited instead of clipping, and playback no longer skips or drops
   out when the audio output falls behind.
@@ -127,6 +135,15 @@ shipped, set every Original value:
 | No scenery culling | Scenery Culling | `graphics.json` `scenery_culling` | `"Off"` (`"Original"` in a browser; `"Reduced"`: what can be seen from the stretches around you, the tallest towers and any building that looks tall or wide from where you are) | `"Original"` |
 | See-through scenery in order | See-Through Order | `graphics.json` `see_through_order` | `"Sorted"` | `"Original"` |
 | Whole ghost arrows | Ghost Arrows | `graphics.json` `ghost_arrows` | `"Whole"` | `"Original"` |
+| Bloom | Bloom | `graphics.json` `bloom` | `"Original"` (`"Low"`, `"Medium"`, `"High"`) | `"Original"` |
+| Shadows | Shadows | `graphics.json` `shadows` | `"Original"` (`"Light"`, `"Dark"`) | `"Original"` |
+| Brightness | Brightness | `graphics.json` `brightness` | `"Original"` (`"Darker2"`, `"Darker"`, `"Brighter"`, `"Brighter2"`) | `"Original"` |
+| Contrast | Contrast | `graphics.json` `contrast` | `"Original"` (`"Lower2"`, `"Lower"`, `"Higher"`, `"Higher2"`) | `"Original"` |
+| Gamma | Gamma | `graphics.json` `gamma` | `"Original"` (`"Darker2"`, `"Darker"`, `"Brighter"`, `"Brighter2"`) | `"Original"` |
+| HDR Output | HDR Output | `graphics.json` `hdr_output` | `"Original"` (`"On"`) | `"Original"` |
+| HDR Brightness | HDR Brightness | `graphics.json` `hdr_paper_white` | `"100"`, `"150"`, `"200"`, `"250"`, `"300"` (nits) | `"200"` |
+| HDR Peak Brightness | HDR Peak Brightness | `graphics.json` `hdr_peak` | `"400"`, `"600"`, `"800"`, `"1000"`, `"1500"` (nits) | `"1000"` |
+| HDR Highlights | HDR Highlights | `graphics.json` `hdr_highlights` | `"None"`, `"Low"`, `"Medium"`, `"High"` | `"Medium"` |
 | Rendering resolution | Resolution | `graphics.json` `res_option` | `"Auto"` (window size) | `"Original"` (320×240) |
 | Anti-aliasing | MS Anti-Aliasing | `graphics.json` `msaa_option` | `"MSAA2X"` | `"None"` |
 | Hi-res menu and HUD text | Hi-res Font | `graphics.json` `hires_font` | `"On"` | `"Off"` |

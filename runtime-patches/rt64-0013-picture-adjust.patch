@@ -1,0 +1,93 @@
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+index 4502c4a..15ee711 100644
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -55,6 +55,22 @@ namespace RT64 {
+     float bloomThreshold() { return bloomThresholdValue.load(std::memory_order_relaxed); }
+     float bloomRadius() { return bloomRadiusValue.load(std::memory_order_relaxed); }
+ 
++    static std::atomic<float> pictureBrightness{ 0.0f };
++    static std::atomic<float> pictureContrast{ 1.0f };
++    static std::atomic<float> pictureGamma{ 1.0f };
++
++    void setPictureAdjust(float brightness, float contrast, float gamma) {
++        pictureBrightness.store(brightness, std::memory_order_relaxed);
++        pictureContrast.store(contrast, std::memory_order_relaxed);
++        pictureGamma.store(gamma, std::memory_order_relaxed);
++    }
++
++    void pictureAdjust(float &brightness, float &contrast, float &gamma) {
++        brightness = pictureBrightness.load(std::memory_order_relaxed);
++        contrast = pictureContrast.load(std::memory_order_relaxed);
++        gamma = pictureGamma.load(std::memory_order_relaxed);
++    }
++
+     // Rush 2049 patch: a game that draws see-through surfaces (blended, Z compare without Z update) in among the rest of
+     // its scene leaves them to whatever is drawn after: on a console as here, a surface drawn later and farther away
+     // passes the depth test where the see-through one is and paints over it, since the see-through one wrote no depth.
+diff --git a/src/hle/rt64_state.h b/src/hle/rt64_state.h
+index 97f0812..9de39b3 100644
+--- a/src/hle/rt64_state.h
++++ b/src/hle/rt64_state.h
+@@ -52,6 +52,11 @@ namespace RT64 {
+     float bloomThreshold();
+     float bloomRadius();
+ 
++    // Rush 2049 patch: the player's picture settings, applied by the VI pass to the whole picture (VideoInterfacePS):
++    // brightness added (0 none), contrast around mid grey (1 none) and a gamma exponent (1 none, below 1 brighter).
++    void setPictureAdjust(float brightness, float contrast, float gamma);
++    void pictureAdjust(float &brightness, float &contrast, float &gamma);
++
+     struct State {
+         struct External {
+             Application *app;
+diff --git a/src/render/rt64_vi_renderer.cpp b/src/render/rt64_vi_renderer.cpp
+index bc37787..790ad92 100644
+--- a/src/render/rt64_vi_renderer.cpp
++++ b/src/render/rt64_vi_renderer.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include "shared/rt64_hlsl.h"
+ #include "shared/rt64_video_interface.h"
++#include "hle/rt64_state.h"
+ 
+ namespace RT64 {
+     // VIRenderer
+@@ -86,6 +87,7 @@ namespace RT64 {
+         pushConstants.videoResolution = computeHDSize(hlslpp::float2(p.vi->fbSize()), p.resolutionScale, p.downsamplingScale);
+         pushConstants.textureResolution = { float(p.textureWidth), float(p.textureHeight) };
+         pushConstants.gamma = p.vi->gamma();
++        pictureAdjust(pushConstants.brightness, pushConstants.contrast, pushConstants.userGamma);
+ 
+         p.commandList->setPipeline(shader->pipeline.get());
+         p.commandList->setGraphicsPipelineLayout(shader->pipelineLayout.get());
+diff --git a/src/shaders/VideoInterfacePS.hlsl b/src/shaders/VideoInterfacePS.hlsl
+index 05a7536..56c942d 100644
+--- a/src/shaders/VideoInterfacePS.hlsl
++++ b/src/shaders/VideoInterfacePS.hlsl
+@@ -23,6 +23,9 @@ float4 SampleInput(float2 uv) {
+     float2 outsideBorder = step(LowerRight, uv);
+     float4 sampledColor = gInput.SampleLevel(gSampler, clamp(uv, HalfPixel, LowerRight - HalfPixel), 0);
+     float4 gammaCorrectedColor = pow(sampledColor, gConstants.gamma);
++    // Rush 2049 patch: the player's brightness, contrast and gamma.
++    gammaCorrectedColor.rgb = pow(saturate(gammaCorrectedColor.rgb), gConstants.userGamma);
++    gammaCorrectedColor.rgb = saturate((gammaCorrectedColor.rgb - 0.5f) * gConstants.contrast + 0.5f + gConstants.brightness);
+     gammaCorrectedColor.rgb *= max(1.0f - outsideBorder.x - outsideBorder.y, 0.0f);
+     gammaCorrectedColor.a = 1.0f;
+     return gammaCorrectedColor;
+diff --git a/src/shared/rt64_video_interface.h b/src/shared/rt64_video_interface.h
+index b51cf09..bbf0841 100644
+--- a/src/shared/rt64_video_interface.h
++++ b/src/shared/rt64_video_interface.h
+@@ -13,6 +13,11 @@ namespace interop {
+         float2 videoResolution;
+         float2 textureResolution;
+         float gamma;
++        // Rush 2049 patch: the player's picture settings (setPictureAdjust), after the VI's gamma: brightness added,
++        // contrast around mid grey, and a gamma exponent; 0, 1 and 1 leave the picture as it is.
++        float brightness;
++        float contrast;
++        float userGamma;
+     };
+ #ifdef HLSL_CPU
+ };

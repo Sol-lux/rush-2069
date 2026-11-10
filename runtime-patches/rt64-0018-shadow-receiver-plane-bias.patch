@@ -1,0 +1,43 @@
+--- a/src/shaders/ShadowPS.hlsl
++++ b/src/shaders/ShadowPS.hlsl
+@@ -52,22 +52,35 @@
+     uint width, height;
+     gShadowMap.GetDimensions(width, height);
+ 
+-    // A steeper surface from the sun takes more bias.
+-    const float slope = max(abs(ddx(iSunPos.z)), abs(ddy(iSunPos.z)));
+-    const float depth = iSunPos.z - gConstants.bias - slope * 1.5f;
+-
+     // 4x4 taps with bilinear weights at the edges: a soft edge about two texels wide.
+     const float2 texel = uv * float2(width, height) - 0.5f;
+     const int2 base = int2(floor(texel));
+     const float2 f = texel - floor(texel);
+     const float wx[4] = { 1.0f - f.x, 1.0f, 1.0f, f.x };
+     const float wy[4] = { 1.0f - f.y, 1.0f, 1.0f, f.y };
++
++    // Receiver plane bias: how the surface's depth from the sun changes per shadow-map texel, from the screen-space
++    // derivatives of its map position, so each tap is compared against the surface's own plane at that tap's texel
++    // rather than its depth at the pixel. It depends on the surface and the sun only, not the camera, so a curved or
++    // sloped road neither shadows itself in its triangles' pattern nor flickers as the view moves. Clamped where the
++    // surface is nearly edge-on to the sun, and at least half a texel's slope more for the map's own rounding.
++    const float2 dTexelDx = ddx(texel), dTexelDy = ddy(texel);
++    const float dDepthDx = ddx(iSunPos.z), dDepthDy = ddy(iSunPos.z);
++    const float det = dTexelDx.x * dTexelDy.y - dTexelDy.x * dTexelDx.y;
++    float2 depthPerTexel = float2(0.0f, 0.0f);
++    if (abs(det) > 1e-8f) {
++        depthPerTexel = float2(dTexelDy.y * dDepthDx - dTexelDx.y * dDepthDy, dTexelDx.x * dDepthDy - dTexelDy.x * dDepthDx) / det;
++    }
++    depthPerTexel = clamp(depthPerTexel, -0.002f, 0.002f);
++    const float depth = iSunPos.z - gConstants.bias - (abs(depthPerTexel.x) + abs(depthPerTexel.y)) * 0.5f;
++
+     float shadow = 0.0f;
+     [unroll] for (int y = 0; y < 4; y++) {
+         [unroll] for (int x = 0; x < 4; x++) {
+             const int2 p = clamp(base + int2(x - 1, y - 1), int2(0, 0), int2(width - 1, height - 1));
+             const float occluder = gShadowMap.Load(int3(p, 0));
+-            shadow += (occluder < depth) ? (wx[x] * wy[y]) : 0.0f;
++            const float tapDepth = depth + dot(depthPerTexel, float2(p) - texel);
++            shadow += (occluder < tapDepth) ? (wx[x] * wy[y]) : 0.0f;
+         }
+     }
+ 

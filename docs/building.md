@@ -51,6 +51,12 @@ the process you started, from a DPI-aware process (`SetProcessDPIAware()` first,
 --musyx hle|native|lle|compare   audio path; native is the HLE without the 44.1 kHz mix
 --dump-audio <wav>           the game's mix before resampling (float); --dump-output <wav>: what the device gets
 --dump-dl <file> <seconds>   one frame's display list as text
+--dump-textures <dir>        every texture drawn, as RT64's debugger dumps them (named by RT64's hash)
+--shadow-sun <x,y,z>         Shadows' sun: the way its light travels in the game's world (y up; default 0.3,-1,0.2)
+--shadow-tuner               Shadows' sun per track by eye: Insert shows it, Home/End turn the sun, Page Up/Down raise it
+                             (src/shadow_tuner.cpp; saved to shadow_suns.txt); Print Screen saves a shot to shots/,
+                             Delete turns the debug colours on and off
+--shadow-debug               Shadows' debug view: in shadow red, lit green, outside the shadow map blue
 --dump-ram <prefix> <t1,..>  all of RDRAM at those times; diff two to find a setting's byte
 --watch <addr>               stacks on the first 6 changes of one RDRAM byte; --hwwatch <addr>: reads too
 --wwatch <addr>[:w]          the game functions that write those w bytes (default 4), logged every 5 s (Windows)

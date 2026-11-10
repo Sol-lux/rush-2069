@@ -82,6 +82,10 @@ namespace rush2049 {
     bool ghost_arrows_whole();
     // Battle Mode Alt (src/battle_tuning.cpp): every Battle gameplay mod on (Alt) or Battle as it shipped (Original).
     void set_battle_mode_alt(bool on);
+    // Cheat Menu (src/cheat_menu.cpp): CHEATS and every cheat in it available from the start (Always Shown), or
+    // behind their button combos as the game shipped (Original). cheat_menu_retrace runs on every retrace.
+    void set_cheat_menu_always_shown(bool on);
+    void cheat_menu_retrace(uint8_t* rdram);
     constexpr float spin_min_rate = 5.0f;      // rounds a second from rest
     constexpr float spin_max_rate = 30.0f;     // at full spin
     constexpr float spin_up_seconds = 3.0f;    // held, from rest to full

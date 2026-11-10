@@ -24,6 +24,12 @@ it shipped.
 | Damage and refire | Done, to play | Machine gun 114 to 80, bouncy ball 800 to 600 direct and 500 splash, heavy rocket 960 to 1320 direct and 1000 splash, mines 800 to 1600 (280 to a head-on Rammer kept), plasma refire 0.1667 s to 60/420 s. `ovl2_func_8038E114` sets the damage (s0) by projectile type and uses it for the direct hit (`0x8038F154`) and as the splash base (`ovl2_func_8038D798`, called at `0x8038ECD4`, `0x8038F0D4`, `0x8038F0F0`, `0x8038F1B4`, `0x8038F1D0`); the mine's 800 is passed at `0x8010C8F8`/`0x8010C920` in `func_8010C7F4`; the plasma case of the fire routine sets its refire at `0x803902E4`. |
 | Upside-down self-destruct | Planned | A short countdown that destroys a car left upside down, perhaps with a vignette as control is lost and a 1-1.5 s window where it is vulnerable. |
 
+## Other mods
+
+| Mod | Status | What it does |
+|---|---|---|
+| Cheat Menu | Done, to play | Option Cheat Menu (General tab, `src/cheat_menu.cpp`). At Always Shown each of the game's eleven cheat flags (halfwords from `0x8011648C`) is held at `0x0101` (available, not switched on) on every retrace, so CHEATS is on the main menu from the start and needs no combos. |
+
 ## Other ideas
 
 The owner's:

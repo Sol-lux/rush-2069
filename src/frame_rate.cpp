@@ -158,6 +158,7 @@ extern "C" gpr rush2049_frame_pace(gpr retraces) {
 // them, so more would play it faster. The hook sends the retraces itself, the way the VI thread sends interrupts, and
 // empties $t8 so the game's own loop sends none.
 extern "C" void rush2049_retrace_clients(uint8_t* rdram, recomp_context* ctx) {
+    rush2049::cheat_menu_retrace(rdram);
     constexpr uint32_t main_thread_queue = 0x8002ECF8;  // the client func_80002238 adds
 #ifdef __EMSCRIPTEN__
     update_fallback();

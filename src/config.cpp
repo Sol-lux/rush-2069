@@ -210,6 +210,18 @@ namespace {
     };
     const std::string battle_mode_option = "battle_mode";
 
+    // src/cheat_menu.cpp.
+    enum class CheatMenu {
+        Original,
+        AlwaysShown,
+        OptionCount
+    };
+    const std::vector<recomp::config::ConfigOptionEnumOption> cheat_menu_options = {
+        {CheatMenu::Original, "Original", "Original"},
+        {CheatMenu::AlwaysShown, "AlwaysShown", "Always Shown"},
+    };
+    const std::string cheat_menu_option = "cheat_menu";
+
     // src/ghost_arrows.cpp.
     enum class GhostArrows {
         Original,
@@ -473,6 +485,18 @@ void rush2049::init_config() {
         battle_mode_options,
         BattleMode::Alt
     );
+    general.add_enum_option(
+        cheat_menu_option,
+        "Cheat Menu",
+        "Whether the game's CHEATS menu needs its button combos."
+        "<br/>"
+        "<b>Original:</b> CHEATS appears on the main menu after its combo, and each cheat in it needs a combo of its "
+        "own, every time the game starts. "
+        "<b>Always Shown:</b> CHEATS is on the main menu from the start, and every cheat in it can be switched on "
+        "and off there without a combo. No cheat is switched on by this.",
+        cheat_menu_options,
+        CheatMenu::AlwaysShown
+    );
     // Called on load too.
     general.add_option_change_callback(controllers_option,
         [](recomp::config::ConfigValueVariant cur_value, recomp::config::ConfigValueVariant, recomp::config::OptionChangeContext) {
@@ -482,6 +506,10 @@ void rush2049::init_config() {
     general.add_option_change_callback(rewind_option,
         [](recomp::config::ConfigValueVariant cur_value, recomp::config::ConfigValueVariant, recomp::config::OptionChangeContext) {
             rush2049::set_rewind(static_cast<Rewind>(std::get<uint32_t>(cur_value)) == Rewind::On);
+        });
+    general.add_option_change_callback(cheat_menu_option,
+        [](recomp::config::ConfigValueVariant cur_value, recomp::config::ConfigValueVariant, recomp::config::OptionChangeContext) {
+            rush2049::set_cheat_menu_always_shown(static_cast<CheatMenu>(std::get<uint32_t>(cur_value)) == CheatMenu::AlwaysShown);
         });
     general.add_option_change_callback(battle_mode_option,
         [](recomp::config::ConfigValueVariant cur_value, recomp::config::ConfigValueVariant, recomp::config::OptionChangeContext) {

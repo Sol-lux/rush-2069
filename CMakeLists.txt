@@ -223,10 +223,12 @@ target_sources(Rush2049Recompiled PRIVATE
     ${CMAKE_SOURCE_DIR}/src/draw_distance.cpp
     ${CMAKE_SOURCE_DIR}/src/ghost_arrows.cpp
     ${CMAKE_SOURCE_DIR}/src/battle_tuning.cpp
+    ${CMAKE_SOURCE_DIR}/src/cheat_menu.cpp
     ${CMAKE_SOURCE_DIR}/src/battle_tuning_mod.cpp
     ${CMAKE_SOURCE_DIR}/src/hires_font.cpp
     ${CMAKE_SOURCE_DIR}/src/rewind.cpp
     ${CMAKE_SOURCE_DIR}/src/sync_probe.cpp
+    ${CMAKE_SOURCE_DIR}/src/frame_lock.cpp
     ${CMAKE_SOURCE_DIR}/src/music_thread.cpp
     ${CMAKE_SOURCE_DIR}/src/audio_resampler.cpp
     ${CMAKE_SOURCE_DIR}/src/audio_limiter.cpp
